@@ -1,0 +1,1628 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Report MustUnderstand="df" xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition" xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner" xmlns:df="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition/defaultfontfamily">
+  <df:DefaultFontFamily>Segoe UI</df:DefaultFontFamily>
+  <AutoRefresh>0</AutoRefresh>
+  <DataSources>
+    <DataSource Name="SharedDS">
+      <DataSourceReference>/SharedDS</DataSourceReference>
+      <rd:SecurityType>None</rd:SecurityType>
+      <rd:DataSourceID>665e5657-a92f-4bfa-a642-e143ba17e2c0</rd:DataSourceID>
+    </DataSource>
+  </DataSources>
+  <DataSets>
+    <DataSet Name="DataSet1">
+      <Query>
+        <DataSourceName>SharedDS</DataSourceName>
+        <QueryParameters>
+          <QueryParameter Name="@ReportMonth">
+            <Value>=Parameters!ReportMonth.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@ReportYear">
+            <Value>=Parameters!ReportYear.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@CompanyID">
+            <Value>=Parameters!CompanyID.Value</Value>
+          </QueryParameter>
+        </QueryParameters>
+        <CommandText>/*
+
+
+declare @ReportYear					int;
+declare @ReportMonth				int;
+declare @CompanyID					int;
+
+*/
+
+declare @ReportBeginDate			date;
+declare @ReportEndDate				date;
+
+begin 
+
+/*
+
+set @ReportYear         = 2021
+set @ReportMonth		= 1
+set @CompanyID			= 6
+
+*/
+
+set @ReportBeginDate	= convert(varchar, @ReportMonth) + '/01/' + convert(varchar, @ReportYear)
+set @ReportEndDate		= dateadd(d, -1, dateadd(m, 1, @ReportBeginDate))
+
+
+create table #Auto_Subline_Premium_by_QuoteID (QuoteID int, PolicyNumber varchar(20), ALPrem money, APDPrem money, AutoBTM money)
+create nonclustered index idx_QuoteID on #Auto_Subline_Premium_by_QuoteID (QuoteID)
+
+insert into #Auto_Subline_Premium_by_QuoteID
+select *
+from [ReportReference].[v_Auto_Subline_Premium_by_QuoteID]
+
+
+select aaaa.QuoteID,
+       aaaa.InsuredPolicyName,
+       aaaa.PolicyNumber,
+	   aaaa.EffectiveDate,
+	   aaaa.TransDate,
+	   aaaa.PolicyType,
+	   aaaa.TransactionType,
+	   aaaa.DisplayStatus,
+	   aaaa.LineName,
+       aaaa.GWP,
+	   aaaa.EqBrkdwn,
+       aaaa.TotGWP,
+       aaaa.CommissionPct,
+	   aaaa.MGACommission TotalMGACommision,
+--	   datediff(m, @ReportBeginDate, aaaa.TransDate) + crtpa.MonthNum RptMonthNum, 
+	   crtpa2.MonthNum,
+	   crtpa2.AmortCategory,
+	   crtpa2.AmortYearNum,
+	   crtpa2.AmortMonthNum,
+	   crtpa2.AmortPct,
+	   round(convert(money, aaaa.MGACommission * crtpa2.AmortPct), 2) AmortMGACommision
+	   
+from (
+select aaa.QuoteID,
+       aaa.InsuredPolicyName,
+       aaa.PolicyNumber,
+	   aaa.EffectiveDate,
+	   aaa.TransDate,
+	   aaa.PolicyType,
+	   aaa.TransactionType,
+	   aaa.DisplayStatus,
+	   aaa.LineName,
+       sum(GWP) GWP,
+	   IsNull((SELECT		sum(CASE WHEN NetRate_Quote_Insur_Quote.TypeOfBusiness NOT IN ('Endorsement', 'Cancellation', 'Reinstate', 'Audit')
+												 THEN NetRate_Quote_Insur_Quote_Locat_Compa.Premium + ISNULL(NetRate_Quote_Insur_Quote_Locat_Compa.TerrorismPremium, 0)
+												 ELSE NetRate_Quote_Insur_Quote_Locat_Compa.Endorse + ISNULL(NetRate_Quote_Insur_Quote_Locat_Compa.TerrorismEndorse, 0)
+											     END)
+							FROM		tblQuotes
+							INNER JOIN	NetRate_Quote_Insur_Quote ON tblQuotes.NetRate_QuoteID = NetRate_Quote_Insur_Quote.QuoteID
+							INNER JOIN	NetRate_Quote_Insur_Quote_Locat ON NetRate_Quote_Insur_Quote.QuoteID = NetRate_Quote_Insur_Quote_Locat.QuoteID
+							INNER JOIN	NetRate_Quote_Insur_Quote_Locat_Compa ON NetRate_Quote_Insur_Quote_Locat.LocationID = NetRate_Quote_Insur_Quote_Locat_Compa.LocationID
+							WHERE aaa.LineName = 'Commercial Property'
+							    AND aaa.QuoteID = tblQuotes.QuoteID
+								AND NetRate_Quote_Insur_Quote_Locat_Compa.OtherDesc in ('ISO Equipment Breakdown',
+																						'ISO Equipment Breakdown Terrorism',
+																						'Equipment Breakdown')), 0) EqBrkdwn,
+       sum(GWP)  -
+	   IsNull((SELECT		sum(CASE WHEN NetRate_Quote_Insur_Quote.TypeOfBusiness NOT IN ('Endorsement', 'Cancellation', 'Reinstate', 'Audit')
+												 THEN NetRate_Quote_Insur_Quote_Locat_Compa.Premium + ISNULL(NetRate_Quote_Insur_Quote_Locat_Compa.TerrorismPremium, 0)
+												 ELSE NetRate_Quote_Insur_Quote_Locat_Compa.Endorse + ISNULL(NetRate_Quote_Insur_Quote_Locat_Compa.TerrorismEndorse, 0)
+											     END)
+							FROM		tblQuotes
+							INNER JOIN	NetRate_Quote_Insur_Quote ON tblQuotes.NetRate_QuoteID = NetRate_Quote_Insur_Quote.QuoteID
+							INNER JOIN	NetRate_Quote_Insur_Quote_Locat ON NetRate_Quote_Insur_Quote.QuoteID = NetRate_Quote_Insur_Quote_Locat.QuoteID
+							INNER JOIN	NetRate_Quote_Insur_Quote_Locat_Compa ON NetRate_Quote_Insur_Quote_Locat.LocationID = NetRate_Quote_Insur_Quote_Locat_Compa.LocationID
+							WHERE aaa.LineName = 'Commercial Property'
+							    AND aaa.QuoteID = tblQuotes.QuoteID
+								AND NetRate_Quote_Insur_Quote_Locat_Compa.OtherDesc in ('ISO Equipment Breakdown',
+																						'ISO Equipment Breakdown Terrorism',
+																						'Equipment Breakdown')), 0) TotGWP,
+      aaa.CommissionPct,
+	   convert(money, round((sum(GWP)  -
+	   IsNull((SELECT		sum(CASE WHEN NetRate_Quote_Insur_Quote.TypeOfBusiness NOT IN ('Endorsement', 'Cancellation', 'Reinstate', 'Audit')
+												 THEN NetRate_Quote_Insur_Quote_Locat_Compa.Premium + ISNULL(NetRate_Quote_Insur_Quote_Locat_Compa.TerrorismPremium, 0)
+												 ELSE NetRate_Quote_Insur_Quote_Locat_Compa.Endorse + ISNULL(NetRate_Quote_Insur_Quote_Locat_Compa.TerrorismEndorse, 0)
+											     END)
+							FROM		tblQuotes
+							INNER JOIN	NetRate_Quote_Insur_Quote ON tblQuotes.NetRate_QuoteID = NetRate_Quote_Insur_Quote.QuoteID
+							INNER JOIN	NetRate_Quote_Insur_Quote_Locat ON NetRate_Quote_Insur_Quote.QuoteID = NetRate_Quote_Insur_Quote_Locat.QuoteID
+							INNER JOIN	NetRate_Quote_Insur_Quote_Locat_Compa ON NetRate_Quote_Insur_Quote_Locat.LocationID = NetRate_Quote_Insur_Quote_Locat_Compa.LocationID
+							WHERE aaa.LineName = 'Commercial Property'
+							    AND aaa.QuoteID = tblQuotes.QuoteID
+								AND NetRate_Quote_Insur_Quote_Locat_Compa.OtherDesc in ('ISO Equipment Breakdown',
+																						'ISO Equipment Breakdown Terrorism',
+																						'Equipment Breakdown')), 0)) *
+       aaa.CommissionPct, 2)) MGACommission
+
+from (
+select a.QuoteID,
+       a.InsuredPolicyName,
+       a.PolicyNumber,
+	   a.EffectiveDate,
+	   convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end) TransDate,
+	   d.Description PolicyType,
+	   IsNull(e.TransactionType, case when d.Description = 'New' then 'New Business' else d.Description end) TransactionType,
+	   a.DisplayStatus,
+	   c.LineName,
+	   crt.CommissionPct,
+	   crt.TreatyID,
+       ISNULL((SELECT     SUM(INVD.AmtBilled)
+							FROM       tblFin_InvoiceDetails INVD
+							INNER JOIN tblFin_PolicyCharges PC ON INVD.ChargeCode = PC.ChargeCode
+							WHERE      INVD.InvoiceNum = b.InvoiceNum
+							  AND      INVD.CompanyLineGuid = cl.CompanyLineGuid
+							AND        PC.ChargeType = 'P'
+							), 0) GWP
+from [GramercyRisk].[dbo].[tblQuotes] a
+     left join [GramercyRisk].[dbo].[lstTransactionTypes] e
+	  on a.TransactionTypeID = e.ID
+	 left join [GramercyRisk].[dbo].[lstPolicyTypes] d
+	  on a.PolicyTypeID = d.PolicyTypeID,
+	 [GramercyRisk].[dbo].[tblFin_Invoices] b,
+     [GramercyRisk].[dbo].[tblFin_InvoiceDetails] id,
+     [GramercyRisk].[dbo].[tblCompanyLines] cl,
+	 [GramercyRisk].[dbo].[tblCompanyLocations] cloc,
+	 [GramercyRisk].[dbo].[tblCompanies] co,
+	 [GramercyRisk].[dbo].[lstLines] c,	 
+	 [GramercyRisk].[ReportReference].[CompanyReinsTreaties] crt
+where a.PolicyNumber is not NULL
+  and convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end) &gt;= @ReportBeginDate 
+  and convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end) &lt; dateadd(d, 1, @ReportEndDate)
+  and a.QuoteID = b.QuoteID
+  and b.Failed = 0
+  and b.InvoiceNum = id.InvoiceNum
+  and id.CompanyLineGuid = cl.CompanyLineGUID
+  and cl.CompanyLocationGUID = cloc.CompanyLocationGUID
+  and cloc.CompanyGUID = co.CompanyGUID
+  and co.CompanyName &lt;&gt; 'Placeholder Company'
+  and co.CompanyID in (@CompanyID)
+  and cl.LineGUID = c.LineGUID
+  and co.CompanyID = crt.CompanyID
+  and convert(date, a.EffectiveDate) between crt.TreatyBeginDate and crt.TreatyEndDate
+  and c.LineName &lt;&gt; 'Commercial Auto'
+--  and a.QuoteID = 4986
+group by a.QuoteID,
+       a.InsuredPolicyName,
+       a.PolicyNumber,
+	   a.EffectiveDate,
+	   convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end),
+	   d.Description,
+	   IsNull(e.TransactionType, case when d.Description = 'New' then 'New Business' else d.Description end),
+	   a.DisplayStatus,
+	   c.LineName,
+	   crt.CommissionPct,
+	   b.InvoiceNum,
+	   cl.CompanyLineGuid,
+	   crt.TreatyID
+
+union all
+
+select zzz.QuoteID,
+       zzz.InsuredPolicyName,
+       zzz.PolicyNumber,
+	   zzz.EffectiveDate,
+	   zzz.TransDate,
+	   zzz.PolicyType,
+	   zzz.TransactionType,
+	   zzz.DisplayStatus,
+	   zzz.LineName,
+	   zzz.CommissionPct,
+	   zzz.TreatyID,
+       max(zzz.GWP) GWP
+from (
+select a.QuoteID,
+       a.InsuredPolicyName,
+       a.PolicyNumber,
+	   a.EffectiveDate,
+	   convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end) TransDate,
+	   d.Description PolicyType,
+	   IsNull(e.TransactionType, case when d.Description = 'New' then 'New Business' else d.Description end) TransactionType,
+	   a.DisplayStatus,
+	   'Commercial Auto Liability' LineName,
+	   crt.CommissionPct,
+	   crt.TreatyID,
+--	   max(b.AnnualPremium) GWP
+       convert(money, case when IsNull(max(asp.AutoBTM), 0) = 0
+					  then max(asp.ALPrem)
+					  else max(asp.AlPrem) + (max(asp.AlPrem) / (max(asp.AlPrem) + max(asp.APDPrem)) * max(asp.AutoBTM)) end) GWP
+from [GramercyRisk].[dbo].[tblQuotes] a
+     left join [GramercyRisk].[dbo].[lstTransactionTypes] e
+	  on a.TransactionTypeID = e.ID
+	 left join [GramercyRisk].[dbo].[lstPolicyTypes] d
+	  on a.PolicyTypeID = d.PolicyTypeID,
+	 [GramercyRisk].[dbo].[tblFin_Invoices] b,
+     [GramercyRisk].[dbo].[tblFin_InvoiceDetails] id,
+     [GramercyRisk].[dbo].[tblCompanyLines] cl,
+	 [GramercyRisk].[dbo].[tblCompanyLocations] cloc,
+	 [GramercyRisk].[dbo].[tblCompanies] co,
+	 [GramercyRisk].[dbo].[lstLines] c,	 
+	 [GramercyRisk].[ReportReference].[CompanyReinsTreaties] crt,
+	 #Auto_Subline_Premium_by_QuoteID asp
+where a.PolicyNumber is not NULL
+  and convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end) &gt;= @ReportBeginDate 
+  and convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end) &lt; dateadd(d, 1, @ReportEndDate)
+  and a.QuoteID = b.QuoteID
+  and b.Failed = 0
+  and b.InvoiceNum = id.InvoiceNum
+  and id.CompanyLineGuid = cl.CompanyLineGUID
+  and cl.CompanyLocationGUID = cloc.CompanyLocationGUID
+  and cloc.CompanyGUID = co.CompanyGUID
+  and co.CompanyName &lt;&gt; 'Placeholder Company'
+  and co.CompanyID in (@CompanyID)
+  and cl.LineGUID = c.LineGUID
+  and co.CompanyID = crt.CompanyID
+  and convert(date, a.EffectiveDate) between crt.TreatyBeginDate and crt.TreatyEndDate
+  and c.LineName = 'Commercial Auto'
+  and a.QuoteID = asp.QuoteID
+--  and a.QuoteID = 4986
+group by a.QuoteID,
+       a.InsuredPolicyName,
+       a.PolicyNumber,
+	   a.EffectiveDate,
+	   convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end),
+	   d.Description,
+	   IsNull(e.TransactionType, case when d.Description = 'New' then 'New Business' else d.Description end),
+	   a.DisplayStatus,
+	   c.LineName,
+	   crt.CommissionPct,
+	   crt.TreatyID,
+	   b.InvoiceNum,
+	   cl.CompanyLineGuid
+having convert(money, case when IsNull(max(asp.AutoBTM), 0) = 0
+					  then max(asp.ALPrem)
+					  else max(asp.AlPrem) + (max(asp.AlPrem) / (max(asp.AlPrem) + max(asp.APDPrem)) * max(asp.AutoBTM)) end) &lt;&gt; 0
+
+
+
+
+union all
+
+
+select a.QuoteID,
+       a.InsuredPolicyName,
+       a.PolicyNumber,
+	   a.EffectiveDate,
+	   convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end) TransDate,
+	   d.Description PolicyType,
+	   IsNull(e.TransactionType, case when d.Description = 'New' then 'New Business' else d.Description end) TransactionType,
+	   a.DisplayStatus,
+	   'Commercial Auto PD' LineName,
+	   crt.CommissionPct,
+	   crt.TreatyID,
+--	   max(b.AnnualPremium) GWP
+	   convert(money, case when IsNull(max(asp.AutoBTM), 0) = 0
+	                  then max(asp.APDPrem) 
+			          else max(asp.APDPrem) + (max(asp.APDPrem) / (max(asp.AlPrem) + max(asp.APDPrem)) * max(asp.AutoBTM)) end) GWP
+from [GramercyRisk].[dbo].[tblQuotes] a
+     left join [GramercyRisk].[dbo].[lstTransactionTypes] e
+	  on a.TransactionTypeID = e.ID
+	 left join [GramercyRisk].[dbo].[lstPolicyTypes] d
+	  on a.PolicyTypeID = d.PolicyTypeID,
+	 [GramercyRisk].[dbo].[tblFin_Invoices] b,
+     [GramercyRisk].[dbo].[tblFin_InvoiceDetails] id,
+     [GramercyRisk].[dbo].[tblCompanyLines] cl,
+	 [GramercyRisk].[dbo].[tblCompanyLocations] cloc,
+	 [GramercyRisk].[dbo].[tblCompanies] co,
+	 [GramercyRisk].[dbo].[lstLines] c,	 
+	 [GramercyRisk].[ReportReference].[CompanyReinsTreaties] crt,
+	 #Auto_Subline_Premium_by_QuoteID asp
+where a.PolicyNumber is not NULL
+  and convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end) &gt;= @ReportBeginDate 
+  and convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end) &lt; dateadd(d, 1, @ReportEndDate)
+  and a.QuoteID = b.QuoteID
+  and b.Failed = 0
+  and b.InvoiceNum = id.InvoiceNum
+  and id.CompanyLineGuid = cl.CompanyLineGUID
+  and cl.CompanyLocationGUID = cloc.CompanyLocationGUID
+  and cloc.CompanyGUID = co.CompanyGUID
+  and co.CompanyName &lt;&gt; 'Placeholder Company'
+  and co.CompanyID in (@CompanyID)
+  and cl.LineGUID = c.LineGUID
+  and co.CompanyID = crt.CompanyID
+  and convert(date, a.EffectiveDate) between crt.TreatyBeginDate and crt.TreatyEndDate
+  and c.LineName = 'Commercial Auto'
+  and a.QuoteID = asp.QuoteID
+--  and a.QuoteID = 4986
+group by a.QuoteID,
+       a.InsuredPolicyName,
+       a.PolicyNumber,
+	   a.EffectiveDate,
+	   convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end),
+	   d.Description,
+	   IsNull(e.TransactionType, case when d.Description = 'New' then 'New Business' else d.Description end),
+	   a.DisplayStatus,
+	   c.LineName,
+	   crt.CommissionPct,
+	   crt.TreatyID,
+	   b.InvoiceNum,
+	   cl.CompanyLineGuid
+having convert(money, case when IsNull(max(asp.AutoBTM), 0) = 0
+	                  then max(asp.APDPrem) 
+			          else max(asp.APDPrem) + (max(asp.APDPrem) / (max(asp.AlPrem) + max(asp.APDPrem)) * max(asp.AutoBTM)) end) &lt;&gt; 0
+) zzz
+group by zzz.QuoteID,
+       zzz.InsuredPolicyName,
+       zzz.PolicyNumber,
+	   zzz.EffectiveDate,
+	   zzz.TransDate,
+	   zzz.PolicyType,
+	   zzz.TransactionType,
+	   zzz.DisplayStatus,
+	   zzz.LineName,
+	   zzz.CommissionPct,
+	   zzz.TreatyID
+
+) aaa/*,
+     [ReportReference].[CompanyReinsTreatyPremAmort] bbb
+where aaa.EffectiveDate */
+--where aaa.LineName = 'Commercial Inland Marine'
+group by aaa.QuoteID,
+       aaa.InsuredPolicyName,
+       aaa.PolicyNumber,
+	   aaa.EffectiveDate,
+	   aaa.TransDate,
+	   aaa.PolicyType,
+	   aaa.TransactionType,
+	   aaa.DisplayStatus,
+	   aaa.LineName,
+	   aaa.CommissionPct
+) aaaa,
+     [GramercyRisk].[ReportReference].[CompanyReinsTreatyPremAmort] crtpa,
+	 [GramercyRisk].[ReportReference].[CompanyReinsTreatyPremAmort] crtpa2
+where aaaa.EffectiveDate between crtpa.PolEffBeginDate and crtpa.PolEffEndDate
+  and aaaa.EffectiveDate between crtpa2.PolEffBeginDate and crtpa2.PolEffEndDate
+  and crtpa.AmortCategory = crtpa2.AmortCategory
+  and datediff(m, @ReportBeginDate, aaaa.TransDate) + crtpa.MonthNum = crtpa2.MonthNum
+
+drop table #Auto_Subline_Premium_by_QuoteID
+
+
+
+end</CommandText>
+        <rd:UseGenericDesigner>true</rd:UseGenericDesigner>
+      </Query>
+      <Fields>
+        <Field Name="QuoteID">
+          <DataField>QuoteID</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="InsuredPolicyName">
+          <DataField>InsuredPolicyName</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="PolicyNumber">
+          <DataField>PolicyNumber</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="EffectiveDate">
+          <DataField>EffectiveDate</DataField>
+          <rd:TypeName>System.DateTime</rd:TypeName>
+        </Field>
+        <Field Name="TransDate">
+          <DataField>TransDate</DataField>
+          <rd:TypeName>System.DateTime</rd:TypeName>
+        </Field>
+        <Field Name="PolicyType">
+          <DataField>PolicyType</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="TransactionType">
+          <DataField>TransactionType</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="DisplayStatus">
+          <DataField>DisplayStatus</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="LineName">
+          <DataField>LineName</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="GWP">
+          <DataField>GWP</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="EqBrkdwn">
+          <DataField>EqBrkdwn</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="TotGWP">
+          <DataField>TotGWP</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="CommissionPct">
+          <DataField>CommissionPct</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="TotalMGACommision">
+          <DataField>TotalMGACommision</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="MonthNum">
+          <DataField>MonthNum</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="AmortCategory">
+          <DataField>AmortCategory</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="AmortYearNum">
+          <DataField>AmortYearNum</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="AmortMonthNum">
+          <DataField>AmortMonthNum</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="AmortPct">
+          <DataField>AmortPct</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="AmortMGACommision">
+          <DataField>AmortMGACommision</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="DataSet2">
+      <Query>
+        <DataSourceName>SharedDS</DataSourceName>
+        <CommandText>select datepart(yyyy, convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end)) ReportYear
+from [GramercyRisk].[dbo].[tblQuotes] a
+where datepart(yyyy, convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end)) is not NULL
+group by datepart(yyyy, convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end)) 
+order by 1 desc</CommandText>
+        <rd:UseGenericDesigner>true</rd:UseGenericDesigner>
+      </Query>
+      <Fields>
+        <Field Name="ReportYear">
+          <DataField>ReportYear</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="DataSet3">
+      <Query>
+        <DataSourceName>SharedDS</DataSourceName>
+        <CommandText>select datepart(mm, convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end)) MonthNum,
+       DATENAME(month, convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end)) MonthName
+from [GramercyRisk].[dbo].[tblQuotes] a
+where datepart(mm, convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end)) is not NULL
+group by datepart(mm, convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end)),
+       DATENAME(month, convert(date, case when a.DateBound &lt; a.EffectiveDate then a.EffectiveDate else a.DateBound end))
+order by 1</CommandText>
+      </Query>
+      <Fields>
+        <Field Name="MonthNum">
+          <DataField>MonthNum</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="MonthName">
+          <DataField>MonthName</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="DataSet4">
+      <Query>
+        <DataSourceName>SharedDS</DataSourceName>
+        <CommandText>select CompanyID,
+       CompanyName
+from [GramercyRisk].[dbo].[tblCompanies]
+where CompanyName &lt;&gt; 'Placeholder Company'
+order by 2</CommandText>
+      </Query>
+      <Fields>
+        <Field Name="CompanyID">
+          <DataField>CompanyID</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="CompanyName">
+          <DataField>CompanyName</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+  </DataSets>
+  <ReportSections>
+    <ReportSection>
+      <Body>
+        <ReportItems>
+          <Tablix Name="Tablix1">
+            <TablixCorner>
+              <TablixCornerRows>
+                <TablixCornerRow>
+                  <TablixCornerCell>
+                    <CellContents>
+                      <Textbox Name="Textbox5">
+                        <CanGrow>true</CanGrow>
+                        <KeepTogether>true</KeepTogether>
+                        <Paragraphs>
+                          <Paragraph>
+                            <TextRuns>
+                              <TextRun>
+                                <Value>Amortization Year</Value>
+                                <Style>
+                                  <FontSize>11pt</FontSize>
+                                  <FontWeight>Bold</FontWeight>
+                                  <Color>#666666</Color>
+                                </Style>
+                              </TextRun>
+                            </TextRuns>
+                            <Style>
+                              <TextAlign>Center</TextAlign>
+                            </Style>
+                          </Paragraph>
+                        </Paragraphs>
+                        <rd:DefaultName>Textbox5</rd:DefaultName>
+                        <Style>
+                          <Border>
+                            <Style>Solid</Style>
+                          </Border>
+                          <TopBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </TopBorder>
+                          <BottomBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </BottomBorder>
+                          <LeftBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </LeftBorder>
+                          <RightBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </RightBorder>
+                          <BackgroundColor>White</BackgroundColor>
+                          <VerticalAlign>Bottom</VerticalAlign>
+                          <PaddingLeft>2pt</PaddingLeft>
+                          <PaddingRight>2pt</PaddingRight>
+                          <PaddingTop>2pt</PaddingTop>
+                          <PaddingBottom>2pt</PaddingBottom>
+                        </Style>
+                      </Textbox>
+                    </CellContents>
+                  </TablixCornerCell>
+                  <TablixCornerCell>
+                    <CellContents>
+                      <Textbox Name="Textbox3">
+                        <CanGrow>true</CanGrow>
+                        <KeepTogether>true</KeepTogether>
+                        <Paragraphs>
+                          <Paragraph>
+                            <TextRuns>
+                              <TextRun>
+                                <Value>Amortization Category</Value>
+                                <Style>
+                                  <FontSize>11pt</FontSize>
+                                  <FontWeight>Bold</FontWeight>
+                                  <Color>#666666</Color>
+                                </Style>
+                              </TextRun>
+                            </TextRuns>
+                            <Style>
+                              <TextAlign>Center</TextAlign>
+                            </Style>
+                          </Paragraph>
+                        </Paragraphs>
+                        <rd:DefaultName>Textbox3</rd:DefaultName>
+                        <Style>
+                          <Border>
+                            <Style>Solid</Style>
+                          </Border>
+                          <TopBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </TopBorder>
+                          <BottomBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </BottomBorder>
+                          <LeftBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </LeftBorder>
+                          <RightBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </RightBorder>
+                          <BackgroundColor>White</BackgroundColor>
+                          <VerticalAlign>Bottom</VerticalAlign>
+                          <PaddingLeft>2pt</PaddingLeft>
+                          <PaddingRight>2pt</PaddingRight>
+                          <PaddingTop>2pt</PaddingTop>
+                          <PaddingBottom>2pt</PaddingBottom>
+                        </Style>
+                      </Textbox>
+                    </CellContents>
+                  </TablixCornerCell>
+                </TablixCornerRow>
+              </TablixCornerRows>
+            </TablixCorner>
+            <TablixBody>
+              <TablixColumns>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+              </TablixColumns>
+              <TablixRows>
+                <TablixRow>
+                  <Height>0.25in</Height>
+                  <TablixCells>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="AmortMGACommision">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!AmortMGACommision.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>AmortMGACommision</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox14">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!AmortMGACommision.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox14</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                  </TablixCells>
+                </TablixRow>
+                <TablixRow>
+                  <Height>0.25in</Height>
+                  <TablixCells>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox12">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!AmortMGACommision.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox12</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox15">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!AmortMGACommision.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox15</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                  </TablixCells>
+                </TablixRow>
+                <TablixRow>
+                  <Height>0.25in</Height>
+                  <TablixCells>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox9">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!AmortMGACommision.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox9</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox16">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!AmortMGACommision.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox16</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                  </TablixCells>
+                </TablixRow>
+              </TablixRows>
+            </TablixBody>
+            <TablixColumnHierarchy>
+              <TablixMembers>
+                <TablixMember>
+                  <Group Name="AmortMonthNum">
+                    <GroupExpressions>
+                      <GroupExpression>=Fields!AmortMonthNum.Value</GroupExpression>
+                    </GroupExpressions>
+                  </Group>
+                  <SortExpressions>
+                    <SortExpression>
+                      <Value>=Fields!AmortMonthNum.Value</Value>
+                    </SortExpression>
+                  </SortExpressions>
+                  <TablixHeader>
+                    <Size>0.54167in</Size>
+                    <CellContents>
+                      <Textbox Name="AmortMonthNum">
+                        <CanGrow>true</CanGrow>
+                        <KeepTogether>true</KeepTogether>
+                        <Paragraphs>
+                          <Paragraph>
+                            <TextRuns>
+                              <TextRun>
+                                <Value>=Fields!AmortMonthNum.Value</Value>
+                                <Style>
+                                  <FontWeight>Normal</FontWeight>
+                                  <Color>#333333</Color>
+                                </Style>
+                              </TextRun>
+                            </TextRuns>
+                            <Style>
+                              <TextAlign>Center</TextAlign>
+                            </Style>
+                          </Paragraph>
+                        </Paragraphs>
+                        <rd:DefaultName>AmortMonthNum</rd:DefaultName>
+                        <Style>
+                          <Border>
+                            <Style>Solid</Style>
+                          </Border>
+                          <TopBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </TopBorder>
+                          <BottomBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </BottomBorder>
+                          <LeftBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </LeftBorder>
+                          <RightBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </RightBorder>
+                          <BackgroundColor>White</BackgroundColor>
+                          <VerticalAlign>Bottom</VerticalAlign>
+                          <PaddingLeft>2pt</PaddingLeft>
+                          <PaddingRight>2pt</PaddingRight>
+                          <PaddingTop>2pt</PaddingTop>
+                          <PaddingBottom>2pt</PaddingBottom>
+                        </Style>
+                      </Textbox>
+                    </CellContents>
+                  </TablixHeader>
+                  <TablixMembers>
+                    <TablixMember />
+                  </TablixMembers>
+                </TablixMember>
+                <TablixMember>
+                  <TablixHeader>
+                    <Size>0.54167in</Size>
+                    <CellContents>
+                      <Textbox Name="Textbox13">
+                        <CanGrow>true</CanGrow>
+                        <KeepTogether>true</KeepTogether>
+                        <Paragraphs>
+                          <Paragraph>
+                            <TextRuns>
+                              <TextRun>
+                                <Value>Total</Value>
+                                <Style>
+                                  <FontSize>11pt</FontSize>
+                                  <FontWeight>Bold</FontWeight>
+                                  <Color>#333333</Color>
+                                </Style>
+                              </TextRun>
+                            </TextRuns>
+                            <Style>
+                              <TextAlign>Center</TextAlign>
+                            </Style>
+                          </Paragraph>
+                        </Paragraphs>
+                        <rd:DefaultName>Textbox13</rd:DefaultName>
+                        <Style>
+                          <Border>
+                            <Style>Solid</Style>
+                          </Border>
+                          <TopBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </TopBorder>
+                          <BottomBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </BottomBorder>
+                          <LeftBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </LeftBorder>
+                          <RightBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </RightBorder>
+                          <BackgroundColor>White</BackgroundColor>
+                          <VerticalAlign>Bottom</VerticalAlign>
+                          <PaddingLeft>2pt</PaddingLeft>
+                          <PaddingRight>2pt</PaddingRight>
+                          <PaddingTop>2pt</PaddingTop>
+                          <PaddingBottom>2pt</PaddingBottom>
+                        </Style>
+                      </Textbox>
+                    </CellContents>
+                  </TablixHeader>
+                </TablixMember>
+              </TablixMembers>
+            </TablixColumnHierarchy>
+            <TablixRowHierarchy>
+              <TablixMembers>
+                <TablixMember>
+                  <Group Name="AmortYearNum">
+                    <GroupExpressions>
+                      <GroupExpression>=Fields!AmortYearNum.Value</GroupExpression>
+                    </GroupExpressions>
+                  </Group>
+                  <SortExpressions>
+                    <SortExpression>
+                      <Value>=Fields!AmortYearNum.Value</Value>
+                    </SortExpression>
+                  </SortExpressions>
+                  <TablixHeader>
+                    <Size>1.33333in</Size>
+                    <CellContents>
+                      <Textbox Name="AmortYearNum">
+                        <CanGrow>true</CanGrow>
+                        <KeepTogether>true</KeepTogether>
+                        <Paragraphs>
+                          <Paragraph>
+                            <TextRuns>
+                              <TextRun>
+                                <Value>="Year " +  CStr(Fields!AmortYearNum.Value) + " - " + CStr(Parameters!ReportYear.Value + Fields!AmortYearNum.Value - 1)</Value>
+                                <Style>
+                                  <FontWeight>Normal</FontWeight>
+                                  <Color>#333333</Color>
+                                </Style>
+                              </TextRun>
+                            </TextRuns>
+                            <Style />
+                          </Paragraph>
+                        </Paragraphs>
+                        <rd:DefaultName>AmortYearNum</rd:DefaultName>
+                        <Style>
+                          <Border>
+                            <Style>Solid</Style>
+                          </Border>
+                          <TopBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </TopBorder>
+                          <BottomBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </BottomBorder>
+                          <LeftBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </LeftBorder>
+                          <RightBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </RightBorder>
+                          <BackgroundColor>White</BackgroundColor>
+                          <PaddingLeft>2pt</PaddingLeft>
+                          <PaddingRight>2pt</PaddingRight>
+                          <PaddingTop>2pt</PaddingTop>
+                          <PaddingBottom>2pt</PaddingBottom>
+                        </Style>
+                      </Textbox>
+                    </CellContents>
+                  </TablixHeader>
+                  <TablixMembers>
+                    <TablixMember>
+                      <Group Name="AmortCategory">
+                        <GroupExpressions>
+                          <GroupExpression>=Fields!AmortCategory.Value</GroupExpression>
+                        </GroupExpressions>
+                      </Group>
+                      <SortExpressions>
+                        <SortExpression>
+                          <Value>=Fields!AmortCategory.Value</Value>
+                          <Direction>Descending</Direction>
+                        </SortExpression>
+                      </SortExpressions>
+                      <TablixHeader>
+                        <Size>1.16667in</Size>
+                        <CellContents>
+                          <Textbox Name="AmortCategory">
+                            <CanGrow>true</CanGrow>
+                            <KeepTogether>true</KeepTogether>
+                            <Paragraphs>
+                              <Paragraph>
+                                <TextRuns>
+                                  <TextRun>
+                                    <Value>=Fields!AmortCategory.Value</Value>
+                                    <Style>
+                                      <FontWeight>Normal</FontWeight>
+                                      <Color>#333333</Color>
+                                    </Style>
+                                  </TextRun>
+                                </TextRuns>
+                                <Style>
+                                  <TextAlign>Center</TextAlign>
+                                </Style>
+                              </Paragraph>
+                            </Paragraphs>
+                            <rd:DefaultName>AmortCategory</rd:DefaultName>
+                            <Style>
+                              <Border>
+                                <Style>Solid</Style>
+                              </Border>
+                              <TopBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </TopBorder>
+                              <BottomBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </BottomBorder>
+                              <LeftBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </LeftBorder>
+                              <RightBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </RightBorder>
+                              <BackgroundColor>White</BackgroundColor>
+                              <PaddingLeft>2pt</PaddingLeft>
+                              <PaddingRight>2pt</PaddingRight>
+                              <PaddingTop>2pt</PaddingTop>
+                              <PaddingBottom>2pt</PaddingBottom>
+                            </Style>
+                          </Textbox>
+                        </CellContents>
+                      </TablixHeader>
+                      <TablixMembers>
+                        <TablixMember />
+                      </TablixMembers>
+                      <Visibility>
+                        <Hidden>true</Hidden>
+                        <ToggleItem>AmortYearNum</ToggleItem>
+                      </Visibility>
+                    </TablixMember>
+                    <TablixMember>
+                      <TablixHeader>
+                        <Size>1.16667in</Size>
+                        <CellContents>
+                          <Textbox Name="Textbox11">
+                            <CanGrow>true</CanGrow>
+                            <KeepTogether>true</KeepTogether>
+                            <Paragraphs>
+                              <Paragraph>
+                                <TextRuns>
+                                  <TextRun>
+                                    <Value>Total</Value>
+                                    <Style>
+                                      <FontWeight>Normal</FontWeight>
+                                      <Color>#333333</Color>
+                                    </Style>
+                                  </TextRun>
+                                </TextRuns>
+                                <Style>
+                                  <TextAlign>Center</TextAlign>
+                                </Style>
+                              </Paragraph>
+                            </Paragraphs>
+                            <rd:DefaultName>Textbox11</rd:DefaultName>
+                            <Style>
+                              <Border>
+                                <Style>Solid</Style>
+                              </Border>
+                              <TopBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </TopBorder>
+                              <BottomBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </BottomBorder>
+                              <LeftBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </LeftBorder>
+                              <RightBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </RightBorder>
+                              <BackgroundColor>White</BackgroundColor>
+                              <PaddingLeft>2pt</PaddingLeft>
+                              <PaddingRight>2pt</PaddingRight>
+                              <PaddingTop>2pt</PaddingTop>
+                              <PaddingBottom>2pt</PaddingBottom>
+                            </Style>
+                          </Textbox>
+                        </CellContents>
+                      </TablixHeader>
+                      <KeepWithGroup>Before</KeepWithGroup>
+                    </TablixMember>
+                  </TablixMembers>
+                </TablixMember>
+                <TablixMember>
+                  <TablixHeader>
+                    <Size>1.33333in</Size>
+                    <CellContents>
+                      <Textbox Name="Textbox7">
+                        <CanGrow>true</CanGrow>
+                        <KeepTogether>true</KeepTogether>
+                        <Paragraphs>
+                          <Paragraph>
+                            <TextRuns>
+                              <TextRun>
+                                <Value>Total</Value>
+                                <Style>
+                                  <FontWeight>Bold</FontWeight>
+                                  <Color>#333333</Color>
+                                </Style>
+                              </TextRun>
+                            </TextRuns>
+                            <Style />
+                          </Paragraph>
+                        </Paragraphs>
+                        <rd:DefaultName>Textbox7</rd:DefaultName>
+                        <Style>
+                          <Border>
+                            <Style>Solid</Style>
+                          </Border>
+                          <TopBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </TopBorder>
+                          <BottomBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </BottomBorder>
+                          <LeftBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </LeftBorder>
+                          <RightBorder>
+                            <Color>Black</Color>
+                            <Style>Solid</Style>
+                            <Width>1pt</Width>
+                          </RightBorder>
+                          <BackgroundColor>White</BackgroundColor>
+                          <PaddingLeft>2pt</PaddingLeft>
+                          <PaddingRight>2pt</PaddingRight>
+                          <PaddingTop>2pt</PaddingTop>
+                          <PaddingBottom>2pt</PaddingBottom>
+                        </Style>
+                      </Textbox>
+                    </CellContents>
+                  </TablixHeader>
+                  <TablixMembers>
+                    <TablixMember>
+                      <TablixHeader>
+                        <Size>1.16667in</Size>
+                        <CellContents>
+                          <Textbox Name="Textbox8">
+                            <CanGrow>true</CanGrow>
+                            <KeepTogether>true</KeepTogether>
+                            <Paragraphs>
+                              <Paragraph>
+                                <TextRuns>
+                                  <TextRun>
+                                    <Value />
+                                    <Style>
+                                      <FontWeight>Bold</FontWeight>
+                                      <Color>#333333</Color>
+                                    </Style>
+                                  </TextRun>
+                                </TextRuns>
+                                <Style />
+                              </Paragraph>
+                            </Paragraphs>
+                            <rd:DefaultName>Textbox8</rd:DefaultName>
+                            <Style>
+                              <Border>
+                                <Style>Solid</Style>
+                              </Border>
+                              <TopBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </TopBorder>
+                              <BottomBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </BottomBorder>
+                              <LeftBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </LeftBorder>
+                              <RightBorder>
+                                <Color>Black</Color>
+                                <Style>Solid</Style>
+                                <Width>1pt</Width>
+                              </RightBorder>
+                              <BackgroundColor>White</BackgroundColor>
+                              <PaddingLeft>2pt</PaddingLeft>
+                              <PaddingRight>2pt</PaddingRight>
+                              <PaddingTop>2pt</PaddingTop>
+                              <PaddingBottom>2pt</PaddingBottom>
+                            </Style>
+                          </Textbox>
+                        </CellContents>
+                      </TablixHeader>
+                    </TablixMember>
+                  </TablixMembers>
+                  <KeepWithGroup>Before</KeepWithGroup>
+                </TablixMember>
+              </TablixMembers>
+            </TablixRowHierarchy>
+            <DataSetName>DataSet1</DataSetName>
+            <Top>1.125in</Top>
+            <Height>1.29167in</Height>
+            <Width>4.5in</Width>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+            </Style>
+          </Tablix>
+          <Textbox Name="ReportTitle">
+            <CanGrow>true</CanGrow>
+            <KeepTogether>true</KeepTogether>
+            <Paragraphs>
+              <Paragraph>
+                <TextRuns>
+                  <TextRun>
+                    <Value>MGA Commission Premium Amortization Schedule</Value>
+                    <Style>
+                      <FontFamily>Segoe UI Light</FontFamily>
+                      <FontSize>20pt</FontSize>
+                    </Style>
+                  </TextRun>
+                </TextRuns>
+                <Style />
+              </Paragraph>
+            </Paragraphs>
+            <rd:WatermarkTextbox>Title</rd:WatermarkTextbox>
+            <rd:DefaultName>ReportTitle</rd:DefaultName>
+            <Height>0.5in</Height>
+            <Width>8.25in</Width>
+            <ZIndex>1</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+              <PaddingLeft>2pt</PaddingLeft>
+              <PaddingRight>2pt</PaddingRight>
+              <PaddingTop>2pt</PaddingTop>
+              <PaddingBottom>2pt</PaddingBottom>
+            </Style>
+          </Textbox>
+          <Textbox Name="ReportTitle2">
+            <CanGrow>true</CanGrow>
+            <KeepTogether>true</KeepTogether>
+            <Paragraphs>
+              <Paragraph>
+                <TextRuns>
+                  <TextRun>
+                    <Value>=Join(Parameters!CompanyID.Label, " and ") + " for Premium Written in " + Parameters!ReportMonth.Label + " " + CStr(Parameters!ReportYear.Value) + " as of " + Globals!ExecutionTime</Value>
+                    <Style>
+                      <FontFamily>Segoe UI Light</FontFamily>
+                      <FontSize>12pt</FontSize>
+                    </Style>
+                  </TextRun>
+                </TextRuns>
+                <Style />
+              </Paragraph>
+            </Paragraphs>
+            <rd:WatermarkTextbox>Title</rd:WatermarkTextbox>
+            <rd:DefaultName>ReportTitle</rd:DefaultName>
+            <Top>0.5in</Top>
+            <Height>0.5in</Height>
+            <Width>8.25in</Width>
+            <ZIndex>2</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+              <VerticalAlign>Bottom</VerticalAlign>
+              <PaddingLeft>2pt</PaddingLeft>
+              <PaddingRight>2pt</PaddingRight>
+              <PaddingTop>2pt</PaddingTop>
+              <PaddingBottom>2pt</PaddingBottom>
+            </Style>
+          </Textbox>
+        </ReportItems>
+        <Height>2.41667in</Height>
+        <Style>
+          <Border>
+            <Style>None</Style>
+          </Border>
+        </Style>
+      </Body>
+      <Width>9.14583in</Width>
+      <Page>
+        <PageFooter>
+          <Height>0.45in</Height>
+          <PrintOnFirstPage>true</PrintOnFirstPage>
+          <PrintOnLastPage>true</PrintOnLastPage>
+          <Style>
+            <Border>
+              <Style>None</Style>
+            </Border>
+          </Style>
+        </PageFooter>
+        <LeftMargin>1in</LeftMargin>
+        <RightMargin>1in</RightMargin>
+        <TopMargin>1in</TopMargin>
+        <BottomMargin>1in</BottomMargin>
+        <Style />
+      </Page>
+    </ReportSection>
+  </ReportSections>
+  <ReportParameters>
+    <ReportParameter Name="ReportYear">
+      <DataType>String</DataType>
+      <Prompt>Report Year</Prompt>
+      <ValidValues>
+        <DataSetReference>
+          <DataSetName>DataSet2</DataSetName>
+          <ValueField>ReportYear</ValueField>
+          <LabelField>ReportYear</LabelField>
+        </DataSetReference>
+      </ValidValues>
+    </ReportParameter>
+    <ReportParameter Name="ReportMonth">
+      <DataType>String</DataType>
+      <Prompt>Report Month</Prompt>
+      <ValidValues>
+        <DataSetReference>
+          <DataSetName>DataSet3</DataSetName>
+          <ValueField>MonthNum</ValueField>
+          <LabelField>MonthName</LabelField>
+        </DataSetReference>
+      </ValidValues>
+    </ReportParameter>
+    <ReportParameter Name="CompanyID">
+      <DataType>String</DataType>
+      <Prompt>Company ID</Prompt>
+      <ValidValues>
+        <DataSetReference>
+          <DataSetName>DataSet4</DataSetName>
+          <ValueField>CompanyID</ValueField>
+          <LabelField>CompanyName</LabelField>
+        </DataSetReference>
+      </ValidValues>
+      <MultiValue>true</MultiValue>
+    </ReportParameter>
+  </ReportParameters>
+  <ReportParametersLayout>
+    <GridLayoutDefinition>
+      <NumberOfColumns>4</NumberOfColumns>
+      <NumberOfRows>3</NumberOfRows>
+      <CellDefinitions>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>1</RowIndex>
+          <ParameterName>ReportMonth</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>0</RowIndex>
+          <ParameterName>ReportYear</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>2</RowIndex>
+          <ParameterName>CompanyID</ParameterName>
+        </CellDefinition>
+      </CellDefinitions>
+    </GridLayoutDefinition>
+  </ReportParametersLayout>
+  <rd:ReportUnitType>Inch</rd:ReportUnitType>
+  <rd:ReportServerUrl>http://gramercymga/ReportServer</rd:ReportServerUrl>
+  <rd:ReportID>1f795ee8-8f30-4110-9b01-772a0e4c72db</rd:ReportID>
+</Report>
