@@ -1380,6 +1380,7 @@ begin
 						from [Sandbox].[dbo].[RCTUsers] u
 						where 'anelson@gramercyrisk.com' = u.Email
 						and u.IsRiskManager = 1)
+	/* PB 1/23/2023 Assigning all accounts with insured policy name First letter greater than H to Will keller
 				when left(aa.InsuredPolicyName, 1) < 'Q'
 				then (select max(u.UserId)
 						from [Sandbox].[dbo].[RCTUsers] u
@@ -1388,6 +1389,10 @@ begin
 				else (select max(u.UserId)
 						from [Sandbox].[dbo].[RCTUsers] u
 						where 'rbambino@gramercyrisk.com' = u.Email
+						and u.IsRiskManager = 1) end value,*/
+				else (select max(u.UserId)
+						from [Sandbox].[dbo].[RCTUsers] u
+						where 'wkeller@gramercyrisk.com' = u.Email
 						and u.IsRiskManager = 1) end value,
 			'/ConsultantId/' path,
 			@OpType op,
@@ -2222,6 +2227,7 @@ select  @SubCosts			= IsNull(a.TotalSubCosts, 0),
 												 where json_value(value, '$.IsArchived') = 'false'
 												   and json_value(value, '$.UserType.Caption') = 'Risk Management Professional '
 												   and 'anelson@gramercyrisk.com' = u.Email)
+  /* PB 1/23/2023 Assigning all accounts with insured policy name First letter greater than H to Will keller
 										   when left(a.InsuredPolicyName, 1) < 'Q'
 										   then (select max(u.UserId)
 												 from [Sandbox].[dbo].[RCTUsers] u
@@ -2232,7 +2238,12 @@ select  @SubCosts			= IsNull(a.TotalSubCosts, 0),
 												 from [Sandbox].[dbo].[RCTUsers] u
 												 where json_value(value, '$.IsArchived') = 'false'
 												   and json_value(value, '$.UserType.Caption') = 'Risk Management Professional '
-												   and 'rbambino@gramercyrisk.com' = u.Email) end)
+												   and 'rbambino@gramercyrisk.com' = u.Email) end) */
+											else (select max(u.UserId)
+												 from [Sandbox].[dbo].[RCTUsers] u
+												 where json_value(value, '$.IsArchived') = 'false'
+												   and json_value(value, '$.UserType.Caption') = 'Risk Management Professional '
+												   and 'wkeller@gramercyrisk.com' = u.Email) end)
 from [MGADS0005.NY.MGASYSTEMS.COM].[GramercyRisk].[ReportReference].[v_RCTLoadDataCurr] a
 where InsuredID = @IMSID
 
