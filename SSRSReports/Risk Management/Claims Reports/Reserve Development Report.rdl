@@ -1,0 +1,2361 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Report MustUnderstand="df" xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition" xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner" xmlns:df="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition/defaultfontfamily">
+  <df:DefaultFontFamily>Segoe UI</df:DefaultFontFamily>
+  <AutoRefresh>0</AutoRefresh>
+  <DataSources>
+    <DataSource Name="SharedDS">
+      <DataSourceReference>/SharedDS</DataSourceReference>
+      <rd:SecurityType>None</rd:SecurityType>
+      <rd:DataSourceID>13e45aac-39a8-4b53-9424-0eaeb29133b1</rd:DataSourceID>
+    </DataSource>
+    <DataSource Name="SharedLocalDS">
+      <DataSourceReference>/SharedLocalDS</DataSourceReference>
+      <rd:SecurityType>None</rd:SecurityType>
+      <rd:DataSourceID>73ced91e-abf4-42c8-832b-4de24ecea789</rd:DataSourceID>
+    </DataSource>
+  </DataSources>
+  <DataSets>
+    <DataSet Name="DataSet1">
+      <Query>
+        <DataSourceName>SharedLocalDS</DataSourceName>
+        <QueryParameters>
+          <QueryParameter Name="@AsOfDate">
+            <Value>=Parameters!AsOfDate.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@IndemnityExpense">
+            <Value>=Parameters!IndemnityExpense.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@ClaimStatus">
+            <Value>=Parameters!ClaimStatus.Value</Value>
+          </QueryParameter>
+        </QueryParameters>
+        <CommandText>--declare @AsOfDate			datetime;
+--declare @IndemnityExpense	char(1);
+--declare @ClaimStatus		varchar(10);
+
+begin
+
+--set @AsOfDate = '10/27/2020'
+--set @IndemnityExpense = 'E'
+--set @ClaimStatus = 'Open'
+
+
+select aaa.InsuredPolicyName,
+	   aaa.claim_num,
+	   aaa.policy_year,
+	   aaa.accident_year,
+	   aaa.reported_date,
+	   aaa.closed_date,
+	   datediff(d, aaa.reported_date, case when aaa.claim_status = 'Reopened'
+										   then @AsOfDate
+										   when IsNull(aaa.closed_date, @AsOfDate) &lt; @AsOfDate 
+										   then aaa.closed_date
+										   else @AsOfDate
+										   end) day_open,
+	   aaa.LOB,
+	   aaa.coverage_name,
+	   aaa.claim_status,
+	   aaa.[45day_reserves],
+	   aaa.[90day_reserves],
+	   aaa.[180day_reserves],
+	   aaa.[1year_reserves],
+	   aaa.total_payment
+from (
+select e.InsuredPolicyName,
+       a.fh_claim_num claim_num,
+	   datepart(yyyy, e.EffectiveDate) policy_year,
+	   datepart(yyyy, a.loss_date) accident_year,
+	   a.reported_date reported_date,
+      (select h.closed_date
+	    from [dbo].[fh_claim_history] h
+		where h.claim_id = a.claim_id
+		  and h.history_datetime = (select max(hh.history_datetime)
+									from [dbo].[fh_claim_history] hh
+									where h.claim_id = hh.claim_id
+									  and hh.history_datetime &lt;= @AsOfDate)) closed_date,
+	  (select l.lob_name
+	   from [dbo].[fh_lob] l
+	   where a.lob_id = l.lob_id) LOB,
+	  (select max(cg2.item_name)
+	   from [dbo].[fh_policy_coverage] pc,
+	        [dbo].[fh_code_general] cg2
+	   where a.policy_id = pc.policy_id
+		 and IsNull(a.policy_coverage_id, 'xxx') = case when a.policy_coverage_id is Null
+													    then 'xxx'
+													    else pc.policy_coverage_id end
+		 and a.lob_id = pc.lob_id
+         and cg2.item_id = pc.coverage_id) coverage_name,
+/*
+	  (select max(rpv.reserve_type_name)
+	   from [dbo].[fv_reserve_paid] rpv
+	   where rpv.claim_id = a.claim_id
+	     and rpv.reserve_group_name = 'Indemnity' 
+		 and (a.lob_id not in ('AL', 'AP') 
+		  or rpv.reserve_type_name not in ('GL PD', 'GL BI', 'Auto No-Fault BI'))) coverage_name, */
+      (select case when h.open_close_status = 'O' then 'Open'
+				   when h.open_close_status = 'C' then 'Closed'
+				   when h.open_close_status = 'R' then 'Reopened' end 
+	    from [dbo].[fh_claim_history] h
+		where h.claim_id = a.claim_id
+		  and h.history_datetime = (select max(hh.history_datetime)
+									from [dbo].[fh_claim_history] hh
+									where h.claim_id = hh.claim_id
+									  and hh.history_datetime &lt;= @AsOfDate)) claim_status,
+      (select IsNull(sum(case when c.reserve_or_paid_code = 'P' 
+					   then c.loss_amt * -1 
+					   else c.loss_amt
+					   end), 0) IndeminityOutstandingReserve
+	   from [dbo].[fh_reserve_paid] c, 
+			[dbo].[fh_policy_coverage] pc,
+			[dbo].[fh_reserve_type] rt,
+			[dbo].[fh_code_general] cg
+	   where a.claim_id = c.claim_id
+--         and IsNull(c.iron_transaction_id, '1') &lt;&gt; 'SKIP'
+		 and a.policy_id = pc.policy_id
+		 and IsNull(a.policy_coverage_id, 'xxx') = case when a.policy_coverage_id is Null
+	 											        then 'xxx'
+												        else pc.policy_coverage_id end
+		 and a.lob_id = pc.lob_id and pc.coverage_id = (select max(pc1.coverage_id) from [dbo].[fh_policy_coverage] pc1 where pc.policy_id = pc1.policy_id and pc.lob_id = pc1.lob_id)
+		 and c.reserve_type_id = rt.reserve_type_id
+		 and cg.item_id = rt.reserve_group_id
+	     and cg.item_name &lt;&gt; case when @IndemnityExpense = 'I'
+								  then 'Expense'
+								  else 'XXXX'
+							 end
+	     and cg.item_name =  case when @IndemnityExpense in ('B', 'I')
+		                          then cg.item_name
+                                  when @IndemnityExpense = 'E'
+								  then 'Expense'
+							 end
+	     and c.reserve_date &lt; dateadd(d, 1, @AsOfDate)
+		 and c.reserve_date &lt; dateadd(d, 46, a.reported_date)) "45day_reserves",
+      (select IsNull(sum(case when c.reserve_or_paid_code = 'P' 
+					   then c.loss_amt * -1 
+					   else c.loss_amt
+					   end), 0) IndeminityOutstandingReserve
+	   from [dbo].[fh_reserve_paid] c, 
+			[dbo].[fh_policy_coverage] pc,
+			[dbo].[fh_reserve_type] rt,
+			[dbo].[fh_code_general] cg
+	   where a.claim_id = c.claim_id
+--         and IsNull(c.iron_transaction_id, '1') &lt;&gt; 'SKIP'
+		 and a.policy_id = pc.policy_id
+		 and IsNull(a.policy_coverage_id, 'xxx') = case when a.policy_coverage_id is Null
+	 											        then 'xxx'
+												        else pc.policy_coverage_id end
+		 and a.lob_id = pc.lob_id and pc.coverage_id = (select max(pc1.coverage_id) from [dbo].[fh_policy_coverage] pc1 where pc.policy_id = pc1.policy_id and pc.lob_id = pc1.lob_id)
+		 and c.reserve_type_id = rt.reserve_type_id
+		 and cg.item_id = rt.reserve_group_id
+	     and cg.item_name &lt;&gt; case when @IndemnityExpense = 'I'
+								  then 'Expense'
+								  else 'XXXX'
+							 end
+	     and cg.item_name =  case when @IndemnityExpense in ('B', 'I')
+		                          then cg.item_name
+                                  when @IndemnityExpense = 'E'
+								  then 'Expense'
+							 end
+	     and c.reserve_date &lt; dateadd(d, 1, @AsOfDate)
+		 and c.reserve_date &lt; dateadd(d, 91, a.reported_date)
+		 and @AsOfDate &gt;= dateadd(d, 90, a.reported_date)) "90day_reserves",
+      (select IsNull(sum(case when c.reserve_or_paid_code = 'P' 
+					   then c.loss_amt * -1 
+					   else c.loss_amt
+					   end), 0) IndeminityOutstandingReserve
+	   from [dbo].[fh_reserve_paid] c, 
+			[dbo].[fh_policy_coverage] pc,
+			[dbo].[fh_reserve_type] rt,
+			[dbo].[fh_code_general] cg
+	   where a.claim_id = c.claim_id
+--         and IsNull(c.iron_transaction_id, '1') &lt;&gt; 'SKIP'
+		 and a.policy_id = pc.policy_id
+		 and IsNull(a.policy_coverage_id, 'xxx') = case when a.policy_coverage_id is Null
+	 											        then 'xxx'
+												        else pc.policy_coverage_id end
+		 and a.lob_id = pc.lob_id and pc.coverage_id = (select max(pc1.coverage_id) from [dbo].[fh_policy_coverage] pc1 where pc.policy_id = pc1.policy_id and pc.lob_id = pc1.lob_id)
+		 and c.reserve_type_id = rt.reserve_type_id
+		 and cg.item_id = rt.reserve_group_id
+	     and cg.item_name &lt;&gt; case when @IndemnityExpense = 'I'
+								  then 'Expense'
+								  else 'XXXX'
+							 end
+	     and cg.item_name =  case when @IndemnityExpense in ('B', 'I')
+		                          then cg.item_name
+                                  when @IndemnityExpense = 'E'
+								  then 'Expense'
+							 end
+	     and c.reserve_date &lt; dateadd(d, 1, @AsOfDate)
+		 and c.reserve_date &lt; dateadd(d, 181, a.reported_date)
+		 and @AsOfDate &gt;= dateadd(d, 180, a.reported_date)) "180day_reserves",
+      (select IsNull(sum(case when c.reserve_or_paid_code = 'P' 
+					   then c.loss_amt * -1 
+					   else c.loss_amt
+					   end), 0) IndeminityOutstandingReserve
+	   from [dbo].[fh_reserve_paid] c, 
+			[dbo].[fh_policy_coverage] pc,
+			[dbo].[fh_reserve_type] rt,
+			[dbo].[fh_code_general] cg
+	   where a.claim_id = c.claim_id
+--         and IsNull(c.iron_transaction_id, '1') &lt;&gt; 'SKIP'
+		 and a.policy_id = pc.policy_id
+		 and IsNull(a.policy_coverage_id, 'xxx') = case when a.policy_coverage_id is Null
+	 											        then 'xxx'
+												        else pc.policy_coverage_id end
+		 and a.lob_id = pc.lob_id and pc.coverage_id = (select max(pc1.coverage_id) from [dbo].[fh_policy_coverage] pc1 where pc.policy_id = pc1.policy_id and pc.lob_id = pc1.lob_id)
+		 and c.reserve_type_id = rt.reserve_type_id
+		 and cg.item_id = rt.reserve_group_id
+	     and cg.item_name &lt;&gt; case when @IndemnityExpense = 'I'
+								  then 'Expense'
+								  else 'XXXX'
+							 end
+	     and cg.item_name =  case when @IndemnityExpense in ('B', 'I')
+		                          then cg.item_name
+                                  when @IndemnityExpense = 'E'
+								  then 'Expense'
+							 end
+	     and c.reserve_date &lt; dateadd(d, 1, @AsOfDate)
+		 and c.reserve_date &lt; dateadd(d, 366, a.reported_date)
+		 and @AsOfDate &gt;= dateadd(d, 365, a.reported_date)) "1year_reserves",
+      (select IsNull(sum(c.loss_amt), 0) IndeminityOutstandingReserve
+	   from [dbo].[fh_reserve_paid] c, 
+			[dbo].[fh_policy_coverage] pc,
+			[dbo].[fh_reserve_type] rt,
+			[dbo].[fh_code_general] cg
+	   where a.claim_id = c.claim_id
+ --        and IsNull(c.iron_transaction_id, '1') &lt;&gt; 'SKIP'
+		 and a.policy_id = pc.policy_id
+		 and IsNull(a.policy_coverage_id, 'xxx') = case when a.policy_coverage_id is Null
+	 											        then 'xxx'
+												        else pc.policy_coverage_id end
+  and a.lob_id = pc.lob_id 
+  and pc.coverage_id = (select max(pc1.coverage_id) 
+						from [dbo].[fh_policy_coverage] pc1 
+						where pc.policy_id = pc1.policy_id 
+/*  MH  Added 4/13/2022 */
+						  and IsNull(pc.policy_coverage_id, 'xxx') = case when pc.policy_coverage_id is Null
+												                          then 'xxx'
+												                          else pc1.policy_coverage_id end
+						  and pc.lob_id = pc1.lob_id)
+/*  MH  End of 4/13/2022 Addition */
+		 and c.reserve_type_id = rt.reserve_type_id
+		 and cg.item_id = rt.reserve_group_id
+	     and cg.item_name &lt;&gt; case when @IndemnityExpense = 'I'
+								  then 'Expense'
+								  else 'XXXX'
+							 end
+	     and cg.item_name =  case when @IndemnityExpense in ('B', 'I')
+		                          then cg.item_name
+                                  when @IndemnityExpense = 'E'
+								  then 'Expense'
+							 end
+		 and c.reserve_or_paid_code = 'P'
+/*  MH  6/14/2022 - To back out Paid Reimbursements from Paid Losses instead of being recoveries
+		 and c.transaction_indicator &lt;&gt; 'R' */
+		 and (c.transaction_indicator &lt;&gt; 'R' or c.recovery_type = '4')
+	     and c.reserve_date &lt; dateadd(d, 1, @AsOfDate)) total_payment
+from [dbo].[fh_claim] a
+     left join [dbo].[fh_code_client] g
+	   on a.loss_causation_id = g.item_id,
+	 [dbo].[fh_policy] d,
+     [MGADS0005.NY.MGASYSTEMS.COM].[GramercyRisk].[dbo].[tblQuotes] e,
+	 [MGADS0005.NY.MGASYSTEMS.COM].[GramercyRisk].[dbo].[lstLines] f
+where d.tier1_company_id = 'C13339'
+  and a.policy_id = d.policy_id
+  and a.reported_date &lt; dateadd(d, 1, @AsOfDate)
+  and d.policy_num = e.PolicyNumber
+  and convert(date, d.policy_begin_date) = convert(date, e.EffectiveDate)
+  and e.QuoteID =  (select max(ee.QuoteID)
+					from [MGADS0005.NY.MGASYSTEMS.COM].GramercyRisk.dbo.tblQuotes ee
+					where ee.PolicyNumber = e.PolicyNumber
+					  and ee.EffectiveDate = e.EffectiveDate
+					  and IsNull(ee.EndorsementEffective, ee.EffectiveDate) = (select max(IsNull(eee.EndorsementEffective, eee.EffectiveDate))
+																				 from [MGADS0005.NY.MGASYSTEMS.COM].GramercyRisk.dbo.tblQuotes eee
+																				 where eee.PolicyNumber = ee.PolicyNumber
+																				   and eee.EffectiveDate = ee.EffectiveDate
+																				   and IsNull(eee.EndorsementEffective, eee.EffectiveDate) &lt;= a.loss_date))
+  and e.LineGUID = f.LineGUID
+--  and a.fh_claim_num = '209061'
+) aaa
+where aaa.claim_status in (@ClaimStatus)
+
+end</CommandText>
+        <rd:UseGenericDesigner>true</rd:UseGenericDesigner>
+      </Query>
+      <Fields>
+        <Field Name="InsuredPolicyName">
+          <DataField>InsuredPolicyName</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="claim_num">
+          <DataField>claim_num</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="policy_year">
+          <DataField>policy_year</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="accident_year">
+          <DataField>accident_year</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="reported_date">
+          <DataField>reported_date</DataField>
+          <rd:TypeName>System.DateTime</rd:TypeName>
+        </Field>
+        <Field Name="closed_date">
+          <DataField>closed_date</DataField>
+          <rd:TypeName>System.DateTime</rd:TypeName>
+        </Field>
+        <Field Name="day_open">
+          <DataField>day_open</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="LOB">
+          <DataField>LOB</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="coverage_name">
+          <DataField>coverage_name</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="claim_status">
+          <DataField>claim_status</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="ID45day_reserves">
+          <DataField>45day_reserves</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="ID90day_reserves">
+          <DataField>90day_reserves</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="ID180day_reserves">
+          <DataField>180day_reserves</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="ID1year_reserves">
+          <DataField>1year_reserves</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="total_payment">
+          <DataField>total_payment</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+  </DataSets>
+  <ReportSections>
+    <ReportSection>
+      <Body>
+        <ReportItems>
+          <Tablix Name="Tablix1">
+            <TablixBody>
+              <TablixColumns>
+                <TablixColumn>
+                  <Width>3.9375in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>0.78125in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>0.61458in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>0.77083in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.625in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.66667in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>0.72917in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>2.39583in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>2.64583in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+              </TablixColumns>
+              <TablixRows>
+                <TablixRow>
+                  <Height>0.5in</Height>
+                  <TablixCells>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox2">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Insured Policy Name</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox2</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox3">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Claim Number</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox3</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox5">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Policy Year</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox5</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox7">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Accident Year</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox7</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox9">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Date Reported</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox9</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox11">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Date Closed</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox11</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox13">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Days Open</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox13</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox15">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>LOB</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox15</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox17">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Coverage</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox17</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox19">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Claim Status</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox19</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox21">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Reserves at 45 days</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox21</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox23">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Reserves at 90 days</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox23</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox25">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Reserves at 180 days</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox25</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox27">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Reserves at 1 year</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox27</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox29">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Total Paid</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox29</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>LightBlue</BackgroundColor>
+                            <VerticalAlign>Bottom</VerticalAlign>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                  </TablixCells>
+                </TablixRow>
+                <TablixRow>
+                  <Height>0.25in</Height>
+                  <TablixCells>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="InsuredPolicyName">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!InsuredPolicyName.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>InsuredPolicyName</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="claim_num">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!claim_num.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>claim_num</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="policy_year">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!policy_year.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>policy_year</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="accident_year">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!accident_year.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>accident_year</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="reported_date">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!reported_date.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>g</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>reported_date</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="closed_date">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!closed_date.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>g</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>closed_date</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="day_open">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!day_open.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>day_open</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="LOB">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!LOB.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>LOB</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="coverage_name">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!coverage_name.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>coverage_name</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="claim_status">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!claim_status.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>claim_status</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="ID45day_reserves">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!ID45day_reserves.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>ID45day_reserves</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="ID90day_reserves">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!ID90day_reserves.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>ID90day_reserves</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="ID180day_reserves">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!ID180day_reserves.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>ID180day_reserves</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="ID1year_reserves">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!ID1year_reserves.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>ID1year_reserves</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="total_payment">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Sum(Fields!total_payment.Value)</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>total_payment</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                  </TablixCells>
+                </TablixRow>
+              </TablixRows>
+            </TablixBody>
+            <TablixColumnHierarchy>
+              <TablixMembers>
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+              </TablixMembers>
+            </TablixColumnHierarchy>
+            <TablixRowHierarchy>
+              <TablixMembers>
+                <TablixMember>
+                  <KeepWithGroup>After</KeepWithGroup>
+                </TablixMember>
+                <TablixMember>
+                  <Group Name="Details" />
+                  <SortExpressions>
+                    <SortExpression>
+                      <Value>=Fields!claim_num.Value</Value>
+                    </SortExpression>
+                  </SortExpressions>
+                </TablixMember>
+              </TablixMembers>
+            </TablixRowHierarchy>
+            <KeepTogether>true</KeepTogether>
+            <DataSetName>DataSet1</DataSetName>
+            <Top>2.375in</Top>
+            <Left>0.125in</Left>
+            <Height>0.75in</Height>
+            <Width>21.16666in</Width>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+            </Style>
+          </Tablix>
+          <Textbox Name="ReportTitle">
+            <CanGrow>true</CanGrow>
+            <KeepTogether>true</KeepTogether>
+            <Paragraphs>
+              <Paragraph>
+                <TextRuns>
+                  <TextRun>
+                    <Value>="Reserve Development Report as of " + Parameters!AsOfDate.Value</Value>
+                    <Style>
+                      <FontFamily>Segoe UI Light</FontFamily>
+                      <FontSize>28pt</FontSize>
+                    </Style>
+                  </TextRun>
+                </TextRuns>
+                <Style />
+              </Paragraph>
+            </Paragraphs>
+            <rd:WatermarkTextbox>Title</rd:WatermarkTextbox>
+            <rd:DefaultName>ReportTitle</rd:DefaultName>
+            <Top>1in</Top>
+            <Left>0.125in</Left>
+            <Height>0.5in</Height>
+            <Width>9.39583in</Width>
+            <ZIndex>1</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+              <PaddingLeft>2pt</PaddingLeft>
+              <PaddingRight>2pt</PaddingRight>
+              <PaddingTop>2pt</PaddingTop>
+              <PaddingBottom>2pt</PaddingBottom>
+            </Style>
+          </Textbox>
+          <Image Name="Image1">
+            <Source>Embedded</Source>
+            <Value>GramercyLogo</Value>
+            <Sizing>FitProportional</Sizing>
+            <Top>0.17583in</Top>
+            <Left>0.125in</Left>
+            <Height>0.76861in</Height>
+            <Width>1.89458in</Width>
+            <ZIndex>2</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+            </Style>
+          </Image>
+          <Textbox Name="ReportTitle2">
+            <CanGrow>true</CanGrow>
+            <KeepTogether>true</KeepTogether>
+            <Paragraphs>
+              <Paragraph>
+                <TextRuns>
+                  <TextRun>
+                    <Value>="Reserve Type(s): " + Parameters!IndemnityExpense.Label</Value>
+                    <Style>
+                      <FontFamily>Segoe UI Light</FontFamily>
+                      <FontSize>16pt</FontSize>
+                    </Style>
+                  </TextRun>
+                </TextRuns>
+                <Style />
+              </Paragraph>
+            </Paragraphs>
+            <rd:WatermarkTextbox>Title</rd:WatermarkTextbox>
+            <rd:DefaultName>ReportTitle</rd:DefaultName>
+            <Top>1.52778in</Top>
+            <Left>0.125in</Left>
+            <Height>0.34375in</Height>
+            <Width>5.5in</Width>
+            <ZIndex>3</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+              <PaddingLeft>2pt</PaddingLeft>
+              <PaddingRight>2pt</PaddingRight>
+              <PaddingTop>2pt</PaddingTop>
+              <PaddingBottom>2pt</PaddingBottom>
+            </Style>
+          </Textbox>
+          <Textbox Name="ReportTitle3">
+            <CanGrow>true</CanGrow>
+            <KeepTogether>true</KeepTogether>
+            <Paragraphs>
+              <Paragraph>
+                <TextRuns>
+                  <TextRun>
+                    <Value>="Claim Status(es): " + Join(Parameters!ClaimStatus.Value, ",")</Value>
+                    <Style>
+                      <FontFamily>Segoe UI Light</FontFamily>
+                      <FontSize>16pt</FontSize>
+                    </Style>
+                  </TextRun>
+                </TextRuns>
+                <Style />
+              </Paragraph>
+            </Paragraphs>
+            <rd:WatermarkTextbox>Title</rd:WatermarkTextbox>
+            <rd:DefaultName>ReportTitle</rd:DefaultName>
+            <Top>1.91319in</Top>
+            <Left>0.125in</Left>
+            <Height>0.34375in</Height>
+            <Width>5.5in</Width>
+            <ZIndex>4</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+              <PaddingLeft>2pt</PaddingLeft>
+              <PaddingRight>2pt</PaddingRight>
+              <PaddingTop>2pt</PaddingTop>
+              <PaddingBottom>2pt</PaddingBottom>
+            </Style>
+          </Textbox>
+        </ReportItems>
+        <Height>3.125in</Height>
+        <Style>
+          <Border>
+            <Style>None</Style>
+          </Border>
+        </Style>
+      </Body>
+      <Width>21.67708in</Width>
+      <Page>
+        <PageFooter>
+          <Height>0.45in</Height>
+          <PrintOnFirstPage>true</PrintOnFirstPage>
+          <PrintOnLastPage>true</PrintOnLastPage>
+          <Style>
+            <Border>
+              <Style>None</Style>
+            </Border>
+          </Style>
+        </PageFooter>
+        <LeftMargin>1in</LeftMargin>
+        <RightMargin>1in</RightMargin>
+        <TopMargin>1in</TopMargin>
+        <BottomMargin>1in</BottomMargin>
+        <Style />
+      </Page>
+    </ReportSection>
+  </ReportSections>
+  <ReportParameters>
+    <ReportParameter Name="AsOfDate">
+      <DataType>DateTime</DataType>
+      <Prompt>As Of Date</Prompt>
+    </ReportParameter>
+    <ReportParameter Name="IndemnityExpense">
+      <DataType>String</DataType>
+      <Prompt>Indemnity Expense</Prompt>
+      <ValidValues>
+        <ParameterValues>
+          <ParameterValue>
+            <Value>I</Value>
+            <Label>Indemnity</Label>
+          </ParameterValue>
+          <ParameterValue>
+            <Value>E</Value>
+            <Label>Expense</Label>
+          </ParameterValue>
+          <ParameterValue>
+            <Value>B</Value>
+            <Label>Indemnity and Expense</Label>
+          </ParameterValue>
+        </ParameterValues>
+      </ValidValues>
+    </ReportParameter>
+    <ReportParameter Name="ClaimStatus">
+      <DataType>String</DataType>
+      <Prompt>Claim Status</Prompt>
+      <ValidValues>
+        <ParameterValues>
+          <ParameterValue>
+            <Value>Open</Value>
+            <Label>Open</Label>
+          </ParameterValue>
+          <ParameterValue>
+            <Value>Closed</Value>
+            <Label>Closed</Label>
+          </ParameterValue>
+          <ParameterValue>
+            <Value>Reopened</Value>
+            <Label>Reopened</Label>
+          </ParameterValue>
+        </ParameterValues>
+      </ValidValues>
+      <MultiValue>true</MultiValue>
+    </ReportParameter>
+  </ReportParameters>
+  <ReportParametersLayout>
+    <GridLayoutDefinition>
+      <NumberOfColumns>4</NumberOfColumns>
+      <NumberOfRows>3</NumberOfRows>
+      <CellDefinitions>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>0</RowIndex>
+          <ParameterName>AsOfDate</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>1</RowIndex>
+          <ParameterName>IndemnityExpense</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>2</RowIndex>
+          <ParameterName>ClaimStatus</ParameterName>
+        </CellDefinition>
+      </CellDefinitions>
+    </GridLayoutDefinition>
+  </ReportParametersLayout>
+  <EmbeddedImages>
+    <EmbeddedImage Name="GramercyLogo">
+      <MIMEType>image/jpeg</MIMEType>
+      <ImageData>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</ImageData>
+    </EmbeddedImage>
+  </EmbeddedImages>
+  <rd:ReportUnitType>Inch</rd:ReportUnitType>
+  <rd:ReportServerUrl>http://gramercymga/ReportServer</rd:ReportServerUrl>
+  <rd:ReportID>7eeb74d5-34ee-4706-99cf-16ff4bfa63f6</rd:ReportID>
+</Report>

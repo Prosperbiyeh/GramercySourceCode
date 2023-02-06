@@ -1,0 +1,2846 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Report MustUnderstand="df" xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition" xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner" xmlns:df="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition/defaultfontfamily">
+  <df:DefaultFontFamily>Segoe UI</df:DefaultFontFamily>
+  <AutoRefresh>0</AutoRefresh>
+  <DataSources>
+    <DataSource Name="SharedDS">
+      <DataSourceReference>/SharedDS</DataSourceReference>
+      <rd:SecurityType>None</rd:SecurityType>
+      <rd:DataSourceID>e6b26008-f807-4f21-a140-835bc803d084</rd:DataSourceID>
+    </DataSource>
+  </DataSources>
+  <DataSets>
+    <DataSet Name="DataSet1">
+      <Query>
+        <DataSourceName>SharedDS</DataSourceName>
+        <QueryParameters>
+          <QueryParameter Name="@PolEffBeginDate">
+            <Value>=Parameters!PolEffBeginDate.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@ReportAsOfDate">
+            <Value>=Parameters!ReportAsOfDate.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@PolEffEndDate">
+            <Value>=Parameters!PolEffEndDate.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@InForceOnly">
+            <Value>=Parameters!InForceOnly.Value</Value>
+          </QueryParameter>
+          <QueryParameter Name="@CompanyGUID">
+            <Value>=Parameters!CompanyGUID.Value</Value>
+          </QueryParameter>
+        </QueryParameters>
+        <CommandText>/*
+
+declare @PolEffBeginDate		date;
+declare @PolEffEndDate			date;
+declare @ReportAsOfDate			date;
+declare @InForceOnly			int;
+declare @CompanyGUID			uniqueidentifier;
+
+set @PolEffBeginDate	= '7/1/2017'
+set @PolEffEndDate		= '7/31/2022'
+set @ReportAsOfDate		= '7/31/2022'
+set @InForceOnly		= 1
+set @CompanyGUID		= 'CF3A1D5B-200D-4089-ADDD-BEF011BA7031'
+
+*/
+
+begin
+
+
+/* Umbrella General Liability */
+
+select aaaa.InsuredName,
+       aaaa.PolicyNumber,
+	   aaaa.EffectiveDate,
+	   aaaa.TotalUmbrellaPremium,
+	   IsNull(aaaa.UnderlyingGLPolicyNumber, case when aaaa.GLPremium &lt;&gt; 0
+												  then 'Not Written by Gramercy'
+												  else 'No Coverage' end) UnderlyingGLPolicyNumber,
+	   aaaa.GLManualPremium,
+       aaaa.GLPremium,
+	   aaaa.[GL 1M LayerPremium],
+	   aaaa.[GL 2M LayerPremium],
+	   aaaa.[GL 3M LayerPremium],
+	   aaaa.[GL 4M LayerPremium],
+	   aaaa.[GL 5M LayerPremium],
+	   IsNull(aaaa.UnderlyingAutoPolicyNumber, case when aaaa.AutoPremium &lt;&gt; 0
+												  then 'Not Written by Gramercy'
+												  else 'No Coverage' end) UnderlyingAutoPolicyNumber,
+	   aaaa.ALManualPremium,
+       aaaa.AutoPremium ALPremium,
+	   aaaa.[AL 1M LayerPremium],
+	   aaaa.[AL 2M LayerPremium],
+	   aaaa.[AL 3M LayerPremium],
+	   aaaa.[AL 4M LayerPremium],
+	   aaaa.[AL 5M LayerPremium],
+	   IsNull(aaaa.GLJudgementFactor, 0) GLJudgementFactor,
+	   IsNull(aaaa.ALJudgementFactor, 0) ALJudgementFactor
+from (
+select --aaa.NetRate_QuoteID,
+       aaa.InsuredName,
+       aaa.PolicyNumber,
+	   aaa.EffectiveDate,
+	   (select sum(iqlltu.TotalPremium)
+		from [dbo].[NetRate_Quote_Insur_Quote_Locat] iql,
+		     [dbo].[NetRate_Quote_Insur_Quote_Locat_Locat] iqll,
+		     [dbo].[NetRate_Quote_Insur_Quote_Locat_Locat_TaxBa] iqllt,
+			 [dbo].[NetRate_Quote_Insur_Quote_Locat_Locat_TaxBa_Umbre] iqlltu
+		where aaa.NetRate_QuoteID = iql.QuoteID
+		  and iql.LocationID = iqll.LocationID
+		  and iqll.LocationTotalsID = iqllt.LocationTotalsID
+		  and iqllt.TaxBasesID = iqlltu.TaxBasesID) TotalUmbrellaPremium,
+	   max(case when aaa.LOBCategory = 'General Liability'
+					   then aaa.UnderlyingPolicyNumber end) UnderlyingGLPolicyNumber,
+	   convert(money, IsNull(max(case when aaa.LOBCategory = 'General Liability'
+					   then aaa.Exposure end), 0)) GLManualPremium,
+	   max(case when aaa.LOBCategory = 'Auto Liability'
+					   then aaa.UnderlyingPolicyNumber end) UnderlyingAutoPolicyNumber,
+	   convert(money, IsNull(max(case when aaa.LOBCategory = 'Auto Liability'
+					   then aaa.Exposure end), 0)) ALManualPremium,
+	   IsNull(max(case when aaa.LOBCategory = 'General Liability'
+					   then aaa.Premium end), '') GLPremium,
+       IsNull(max(case when aaa.LOBCategory = 'General Liability'
+					   then aaa.[1M LayerPremium] end), 0) [GL 1M LayerPremium],
+       IsNull(max(case when aaa.LOBCategory = 'General Liability'
+					   then aaa.[2M LayerPremium] end), 0) [GL 2M LayerPremium],
+       IsNull(max(case when aaa.LOBCategory = 'General Liability'
+					   then aaa.[3M LayerPremium] end), 0) [GL 3M LayerPremium],
+       IsNull(max(case when aaa.LOBCategory = 'General Liability'
+					   then aaa.[4M LayerPremium] end), 0) [GL 4M LayerPremium],
+       IsNull(max(case when aaa.LOBCategory = 'General Liability'
+					   then aaa.[5M LayerPremium] end), 0) [GL 5M LayerPremium],
+	   IsNull(max(case when aaa.LOBCategory = 'Auto Liability'
+					   then aaa.Premium end), '') AutoPremium,
+       IsNull(max(case when aaa.LOBCategory = 'Auto Liability'
+					   then aaa.[1M LayerPremium] end), 0) [AL 1M LayerPremium],
+       IsNull(max(case when aaa.LOBCategory = 'Auto Liability'
+					   then aaa.[2M LayerPremium] end), 0) [AL 2M LayerPremium],
+       IsNull(max(case when aaa.LOBCategory = 'Auto Liability'
+					   then aaa.[3M LayerPremium] end), 0) [AL 3M LayerPremium],
+       IsNull(max(case when aaa.LOBCategory = 'Auto Liability'
+					   then aaa.[4M LayerPremium] end), 0) [AL 4M LayerPremium],
+       IsNull(max(case when aaa.LOBCategory = 'Auto Liability'
+					   then aaa.[5M LayerPremium] end), 0) [AL 5M LayerPremium],
+	   max(aaa.GLJudgementFactor) GLJudgementFactor,
+	   max(aaa.ALJudgementFactor) ALJudgementFactor
+from (
+select  a.QuoteID,
+        a.NetRate_QuoteID,
+	   (select ti.PolicyName
+	    from [GramercyRisk].[dbo].[tblSubmissionGroup] tsg,
+		     [GramercyRisk].[dbo].[tblInsureds] ti
+	    where a.SubmissionGroupGuid = tsg.SubmissionGroupGUID
+		  and tsg.InsuredGuid = ti.InsuredGUID) InsuredName,
+	   a.RiskDescription ContractorType,
+	   a.ProducerName Broker,
+	   users.FirstName + ' ' +  users.LastName Underwriter,
+	   a.PolicyNumber,
+	   'Umbrella' LineOfBusiness,
+	   'General Liability' LOBCategory,
+	   convert(date, a.EffectiveDate) EffectiveDate,
+       'MAN PREMIUM' ExposureBasis,
+	   convert(varchar, f.LimitPremium1)  Exposure,
+	   f.LimitPremium2 [1M LayerPremium],
+	   f.LimitPremium3 [2M LayerPremium],
+	   f.LimitPremium4 [3M LayerPremium],
+	   f.LimitPremium5 [4M LayerPremium],
+	    round(f.LimitPremium1 * f.LayerFactor5, 0) [5M LayerPremium],
+	   f.LimitPremium2 + f.LimitPremium3 + f.LimitPremium4 + f.LimitPremium5 +
+         round(f.LimitPremium1 * f.LayerFactor5, 0) Premium,
+	   a.DisplayStatus RenewalStatus,
+	  (select max(tq.PolicyNumber)
+	   from [GramercyRisk].[dbo].[tblSubmissionGroup] tsg,
+			[GramercyRisk].[dbo].[tblQuotes] tq,
+			[GramercyRisk].[dbo].[tblCompanyLines] cl,
+			[GramercyRisk].[dbo].[lstLines] l
+	   where sg.InsuredGuid = tsg.InsuredGUID
+	     and tsg.SubmissionGroupGuid = tq.SubmissionGroupGuid
+	     and convert(date, tq.ExpirationDate) = convert(date, a.ExpirationDate)
+		 and tq.CompanyLineGuid = cl.CompanyLineGUID
+		 and cl.LineGUID = l.LineGUID
+		 and l.LineName in ('Commercial General Liability', 'Commercial Package')) UnderlyingPolicyNumber,
+		e.PremOpsFactor GLJudgementFactor,
+		e.PPTLtTruckFactor ALJudgementFactor
+from [GramercyRisk].[dbo].[tblQuotes] a,
+	 [GramercyRisk].[dbo].[lstPolicyTypes] b,
+	 [GramercyRisk].[dbo].[NetRate_Quote_Insur_Quote_Polic] d,
+	 [GramercyRisk].[dbo].[NetRate_Quote_Insur_Quote_Liabi] e,
+     [GramercyRisk].[dbo].[NetRate_Quote_Insur_Quote_Liabi_Umbre] f,
+	 [GramercyRisk].[dbo].[lstLines] i,
+	 [GramercyRisk].[dbo].[tblUsers] users,
+	 [GramercyRisk].[dbo].[tblSubmissionGroup] sg,
+	 [GramercyRisk].[dbo].[tblCompanyLocations] cloc
+where a.QuoteID = (select max(aa.QuoteID)
+					from [GramercyRisk].[dbo].[tblQuotes] aa
+					where aa.PolicyNumber = a.PolicyNumber
+/*  MH  2/2/2022 - As per Matt only check if DateBound is present, not prior to ReportAsOfDate
+					and convert(date, aa.DateBound) &lt; dateadd(d, 1, @ReportAsOfDate) */
+					and convert(date, aa.DateBound) is not NULL
+					and aa.EffectiveDate between @PolEffBeginDate and @PolEffEndDate
+					and aa.DateCreated &lt;= @ReportAsOfDate
+					and aa.EffectiveDate &lt; @ReportAsOfDate)
+  and a.ExpirationDate &gt;= case when @InForceOnly = 1
+							   then @ReportAsOfDate
+							   else a.ExpirationDate end
+  and a.PolicyTypeID = b.PolicyTypeID
+  and a.NetRate_QuoteID = d.QuoteID
+  and d.QuoteID = e.QuoteID
+  and e.NodeName = 'LiabilityUmbrella'
+  and f.LiabilityUmbrellaID = e.LiabilityLimitsID
+  and a.LineGUID = i.LineGUID
+  and i.LineName = 'Umbrella'
+  and a.UnderwriterUserGuid = users.UserGUID
+  and f.LimitPremium2 + f.LimitPremium3 + f.LimitPremium4 + f.LimitPremium5 +
+         round(f.LimitPremium1 * f.LayerFactor5, 0) &lt;&gt; 0
+  and a.SubmissionGroupGuid = sg.SubmissionGroupGuid
+  and a.CompanyLocationGuid = cloc.CompanyLocationGUID
+  and cloc.CompanyGUID in (@CompanyGUID)
+--  and a.InsuredPolicyName like 'Matc%'
+
+
+union all
+
+
+
+/* Umbrella Auto Liability */
+
+select a.QuoteID,
+        a.NetRate_QuoteID,
+	   (select ti.PolicyName
+	    from [GramercyRisk].[dbo].[tblSubmissionGroup] tsg,
+		     [GramercyRisk].[dbo].[tblInsureds] ti
+	    where a.SubmissionGroupGuid = tsg.SubmissionGroupGUID
+		  and tsg.InsuredGuid = ti.InsuredGUID) InsuredName,
+	   a.RiskDescription ContractorType,
+	   a.ProducerName Broker,
+	   users.FirstName + ' ' +  users.LastName Underwriter,
+	   a.PolicyNumber,
+	   'Umbrella' LineOfBusiness,
+	   'Auto Liability' LOBCategory,
+	   convert(date, a.EffectiveDate) EffectiveDate,
+       'MAN PREMIUM' ExposureBasis,
+	   convert(varchar, f.TotalAutoPremium)  Exposure,
+	   f.NOAPPTLimitPremium1,
+	   f.NOAPPTLimitPremium2,
+	   f.NOAPPTLimitPremium3,
+	   f.NOAPPTLimitPremium4,
+	   f.NOAPPTLimitPremium5,
+	   f.NOAPPTLimitPremium1 + f.NOAPPTLimitPremium2 + f.NOAPPTLimitPremium3 + f.NOAPPTLimitPremium4 + f.NOAPPTLimitPremium5 Premium,
+	   a.DisplayStatus RenewalStatus,
+	  (select max(tq.PolicyNumber)
+	   from [GramercyRisk].[dbo].[tblSubmissionGroup] tsg,
+			[GramercyRisk].[dbo].[tblQuotes] tq,
+			[GramercyRisk].[dbo].[tblCompanyLines] cl,
+			[GramercyRisk].[dbo].[lstLines] l
+	   where sg.InsuredGuid = tsg.InsuredGUID
+	     and tsg.SubmissionGroupGuid = tq.SubmissionGroupGuid
+	     and convert(date, tq.ExpirationDate) = convert(date, a.ExpirationDate)
+		 and tq.CompanyLineGuid = cl.CompanyLineGUID
+		 and cl.LineGUID = l.LineGUID
+		 and l.LineName = 'Commercial Auto') UnderlyingPolicyNumber,
+		e.PremOpsFactor GLJudgementFactor,
+		e.PPTLtTruckFactor ALJudgementFactor
+from [GramercyRisk].[dbo].[tblQuotes] a,
+	 [GramercyRisk].[dbo].[lstPolicyTypes] b,
+	 [GramercyRisk].[dbo].[NetRate_Quote_Insur_Quote_Polic] d,
+	 [GramercyRisk].[dbo].[NetRate_Quote_Insur_Quote_Liabi] e,
+     [GramercyRisk].[dbo].[NetRate_Quote_Insur_Quote_Liabi_Umbre] f,
+	 [GramercyRisk].[dbo].[lstLines] i,
+	 [GramercyRisk].[dbo].[tblUsers] users,
+	 [GramercyRisk].[dbo].[tblSubmissionGroup] sg,
+	 [GramercyRisk].[dbo].[tblCompanyLocations] cloc
+where a.QuoteID = (select max(aa.QuoteID)
+					from [GramercyRisk].[dbo].[tblQuotes] aa
+					where aa.PolicyNumber = a.PolicyNumber
+/*  MH  2/2/2022 - As per Matt only check if DateBound is present, not prior to ReportAsOfDate
+					and convert(date, aa.DateBound) &lt; dateadd(d, 1, @ReportAsOfDate) */
+					and convert(date, aa.DateBound) is not NULL
+					and aa.EffectiveDate between @PolEffBeginDate and @PolEffEndDate
+					and aa.DateCreated &lt;= @ReportAsOfDate
+					and aa.EffectiveDate &lt; @ReportAsOfDate)
+  and a.ExpirationDate &gt;= case when @InForceOnly = 1
+							   then @ReportAsOfDate
+							   else a.ExpirationDate end
+  and a.PolicyTypeID = b.PolicyTypeID
+  and a.NetRate_QuoteID = d.QuoteID
+  and d.QuoteID = e.QuoteID
+  and e.NodeName = 'LiabilityUmbrella'
+  and f.LiabilityUmbrellaID = e.LiabilityLimitsID
+  and a.LineGUID = i.LineGUID
+  and i.LineName = 'Umbrella'
+  and a.UnderwriterUserGuid = users.UserGUID
+  and f.NOAPPTLimitPremium1 + f.NOAPPTLimitPremium2 + f.NOAPPTLimitPremium3 + f.NOAPPTLimitPremium4 + f.NOAPPTLimitPremium5 &lt;&gt; 0
+  and a.SubmissionGroupGuid = sg.SubmissionGroupGuid
+  and a.CompanyLocationGuid = cloc.CompanyLocationGUID
+  and cloc.CompanyGUID in (@CompanyGUID)
+--  and a.InsuredPolicyName like 'Matc%'
+
+
+
+
+
+) aaa
+group by aaa.NetRate_QuoteID, 
+        aaa.InsuredName,
+       aaa.PolicyNumber,
+	   aaa.EffectiveDate
+) aaaa
+--where aaaa.PolicyNumber = 'UMGR1044-02'
+order by 1
+
+
+end</CommandText>
+        <rd:UseGenericDesigner>true</rd:UseGenericDesigner>
+      </Query>
+      <Fields>
+        <Field Name="InsuredName">
+          <DataField>InsuredName</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="PolicyNumber">
+          <DataField>PolicyNumber</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="EffectiveDate">
+          <DataField>EffectiveDate</DataField>
+          <rd:TypeName>System.DateTime</rd:TypeName>
+        </Field>
+        <Field Name="TotalUmbrellaPremium">
+          <DataField>TotalUmbrellaPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="UnderlyingGLPolicyNumber">
+          <DataField>UnderlyingGLPolicyNumber</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="GLManualPremium">
+          <DataField>GLManualPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="GLPremium">
+          <DataField>GLPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="GL_1M_LayerPremium">
+          <DataField>GL 1M LayerPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="GL_2M_LayerPremium">
+          <DataField>GL 2M LayerPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="GL_3M_LayerPremium">
+          <DataField>GL 3M LayerPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="GL_4M_LayerPremium">
+          <DataField>GL 4M LayerPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="GL_5M_LayerPremium">
+          <DataField>GL 5M LayerPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="UnderlyingAutoPolicyNumber">
+          <DataField>UnderlyingAutoPolicyNumber</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="ALManualPremium">
+          <DataField>ALManualPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="ALPremium">
+          <DataField>ALPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="AL_1M_LayerPremium">
+          <DataField>AL 1M LayerPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="AL_2M_LayerPremium">
+          <DataField>AL 2M LayerPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="AL_3M_LayerPremium">
+          <DataField>AL 3M LayerPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="AL_4M_LayerPremium">
+          <DataField>AL 4M LayerPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="AL_5M_LayerPremium">
+          <DataField>AL 5M LayerPremium</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="GLJudgementFactor">
+          <DataField>GLJudgementFactor</DataField>
+          <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="ALJudgementFactor">
+          <DataField>ALJudgementFactor</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="DataSet2">
+      <Query>
+        <DataSourceName>SharedDS</DataSourceName>
+        <CommandText>select CompanyGUID,
+       CompanyName
+from [dbo].[tblCompanies]
+where CompanyName &lt;&gt; 'Placeholder Company'
+group by CompanyGUID,
+       CompanyName
+order by 2</CommandText>
+      </Query>
+      <Fields>
+        <Field Name="CompanyGUID">
+          <DataField>CompanyGUID</DataField>
+          <rd:TypeName>System.Guid</rd:TypeName>
+        </Field>
+        <Field Name="CompanyName">
+          <DataField>CompanyName</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+      </Fields>
+    </DataSet>
+  </DataSets>
+  <ReportSections>
+    <ReportSection>
+      <Body>
+        <ReportItems>
+          <Tablix Name="Tablix1">
+            <TablixBody>
+              <TablixColumns>
+                <TablixColumn>
+                  <Width>4.28125in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.53125in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.0625in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.125in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.10417in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.11458in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.11458in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.8125in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.11458in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.13542in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.125in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.10417in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1.10417in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+                <TablixColumn>
+                  <Width>1in</Width>
+                </TablixColumn>
+              </TablixColumns>
+              <TablixRows>
+                <TablixRow>
+                  <Height>0.76042in</Height>
+                  <TablixCells>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox2">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Insured Name</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox2</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox1">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Policy Number</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox1</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox6">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Effective Date</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox6</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox38">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Total Umbrella Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox38</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox40">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Underlying GL Policy Number</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox40</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox42">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>GL Manual Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox42</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox3">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>GL 1M Layer Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox3</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox5">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>GL 2M Layer Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox5</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox8">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>GL 3M Layer Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox8</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox10">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>GL 4M Layer Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox10</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox12">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>GL 5M Layer Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox12</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox24">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Final GL Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox24</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox46">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Underlying Auto Policy Number</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox46</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox48">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>AL Manual Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox48</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox14">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>AL 1M Layer Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox14</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox16">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>AL 2M Layer Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox16</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox18">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>AL 3M Layer Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox18</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox20">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>AL 4M Layer Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox20</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox22">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>AL 5M Layer Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox22</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox26">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>Final AL Premium</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox26</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox4">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>GL Judgement Factor</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox4</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="Textbox9">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>AL Judgement Factor</Value>
+                                  <Style>
+                                    <FontSize>11pt</FontSize>
+                                    <FontWeight>Bold</FontWeight>
+                                    <Color>#666666</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Center</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>Textbox9</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>PaleTurquoise</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                  </TablixCells>
+                </TablixRow>
+                <TablixRow>
+                  <Height>0.25in</Height>
+                  <TablixCells>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="InsuredName">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!InsuredName.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>InsuredName</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="PolicyNumber">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!PolicyNumber.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>PolicyNumber</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <TopBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </TopBorder>
+                            <BottomBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </BottomBorder>
+                            <LeftBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </LeftBorder>
+                            <RightBorder>
+                              <Color>Black</Color>
+                              <Style>Solid</Style>
+                              <Width>1pt</Width>
+                            </RightBorder>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="EffectiveDate">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!EffectiveDate.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>d</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>EffectiveDate</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="TotalUmbrellaPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!TotalUmbrellaPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>TotalUmbrellaPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="UnderlyingGLPolicyNumber">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!UnderlyingGLPolicyNumber.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>UnderlyingGLPolicyNumber</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="GLManualPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!GLManualPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>GLManualPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                            <rd:FormatSymbolCulture>en-US</rd:FormatSymbolCulture>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="GL_1M_LayerPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!GL_1M_LayerPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>GL_1M_LayerPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="GL_2M_LayerPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!GL_2M_LayerPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>GL_2M_LayerPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="GL_3M_LayerPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!GL_3M_LayerPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>GL_3M_LayerPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="GL_4M_LayerPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!GL_4M_LayerPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>GL_4M_LayerPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="GL_5M_LayerPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!GL_5M_LayerPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>GL_5M_LayerPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="GLPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!GLPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>GLPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="UnderlyingAutoPolicyNumber">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!UnderlyingAutoPolicyNumber.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>UnderlyingAutoPolicyNumber</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="ALManualPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!ALManualPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>ALManualPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                            <rd:FormatSymbolCulture>en-US</rd:FormatSymbolCulture>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="AL_1M_LayerPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!AL_1M_LayerPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>AL_1M_LayerPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="AL_2M_LayerPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!AL_2M_LayerPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>AL_2M_LayerPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="AL_3M_LayerPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!AL_3M_LayerPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>AL_3M_LayerPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="AL_4M_LayerPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!AL_4M_LayerPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>AL_4M_LayerPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="AL_5M_LayerPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!AL_5M_LayerPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>AL_5M_LayerPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="ALPremium">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!ALPremium.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>'$'#,0.00;('$'#,0.00)</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style />
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>ALPremium</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="GLJudgementFactor">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!GLJudgementFactor.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>n2</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Right</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>GLJudgementFactor</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                    <TablixCell>
+                      <CellContents>
+                        <Textbox Name="ALJudgementFactor">
+                          <CanGrow>true</CanGrow>
+                          <KeepTogether>true</KeepTogether>
+                          <Paragraphs>
+                            <Paragraph>
+                              <TextRuns>
+                                <TextRun>
+                                  <Value>=Fields!ALJudgementFactor.Value</Value>
+                                  <Style>
+                                    <FontWeight>Normal</FontWeight>
+                                    <Format>n2</Format>
+                                    <Color>#333333</Color>
+                                  </Style>
+                                </TextRun>
+                              </TextRuns>
+                              <Style>
+                                <TextAlign>Right</TextAlign>
+                              </Style>
+                            </Paragraph>
+                          </Paragraphs>
+                          <rd:DefaultName>ALJudgementFactor</rd:DefaultName>
+                          <Style>
+                            <Border>
+                              <Style>Solid</Style>
+                            </Border>
+                            <BackgroundColor>White</BackgroundColor>
+                            <PaddingLeft>2pt</PaddingLeft>
+                            <PaddingRight>2pt</PaddingRight>
+                            <PaddingTop>2pt</PaddingTop>
+                            <PaddingBottom>2pt</PaddingBottom>
+                          </Style>
+                        </Textbox>
+                      </CellContents>
+                    </TablixCell>
+                  </TablixCells>
+                </TablixRow>
+              </TablixRows>
+            </TablixBody>
+            <TablixColumnHierarchy>
+              <TablixMembers>
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+                <TablixMember />
+              </TablixMembers>
+            </TablixColumnHierarchy>
+            <TablixRowHierarchy>
+              <TablixMembers>
+                <TablixMember>
+                  <KeepWithGroup>After</KeepWithGroup>
+                </TablixMember>
+                <TablixMember>
+                  <Group Name="Details" />
+                  <SortExpressions>
+                    <SortExpression>
+                      <Value>=Fields!InsuredName.Value</Value>
+                    </SortExpression>
+                  </SortExpressions>
+                </TablixMember>
+              </TablixMembers>
+            </TablixRowHierarchy>
+            <KeepTogether>true</KeepTogether>
+            <DataSetName>DataSet1</DataSetName>
+            <Top>2.25in</Top>
+            <Left>0.125in</Left>
+            <Height>1.01042in</Height>
+            <Width>27.72917in</Width>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+            </Style>
+          </Tablix>
+          <Textbox Name="ReportTitle">
+            <CanGrow>true</CanGrow>
+            <KeepTogether>true</KeepTogether>
+            <Paragraphs>
+              <Paragraph>
+                <TextRuns>
+                  <TextRun>
+                    <Value>="Umbrella Policy Report as of " + Parameters!ReportAsOfDate.Value + " for Policies Effective from " + Parameters!PolEffBeginDate.Value + " to " + Parameters!PolEffEndDate.Value</Value>
+                    <Style>
+                      <FontFamily>Segoe UI Light</FontFamily>
+                      <FontSize>24pt</FontSize>
+                    </Style>
+                  </TextRun>
+                </TextRuns>
+                <Style />
+              </Paragraph>
+            </Paragraphs>
+            <rd:WatermarkTextbox>Title</rd:WatermarkTextbox>
+            <rd:DefaultName>ReportTitle</rd:DefaultName>
+            <Top>0.875in</Top>
+            <Left>0.125in</Left>
+            <Height>0.5in</Height>
+            <Width>12.875in</Width>
+            <ZIndex>1</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+              <PaddingLeft>2pt</PaddingLeft>
+              <PaddingRight>2pt</PaddingRight>
+              <PaddingTop>2pt</PaddingTop>
+              <PaddingBottom>2pt</PaddingBottom>
+            </Style>
+          </Textbox>
+          <Image Name="Image1">
+            <Source>Embedded</Source>
+            <Value>GramercyLogo</Value>
+            <Sizing>FitProportional</Sizing>
+            <Top>0.06125in</Top>
+            <Left>0.16542in</Left>
+            <Height>0.75819in</Height>
+            <Width>2.94792in</Width>
+            <ZIndex>2</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+            </Style>
+          </Image>
+          <Textbox Name="ReportTitle2">
+            <CanGrow>true</CanGrow>
+            <KeepTogether>true</KeepTogether>
+            <Paragraphs>
+              <Paragraph>
+                <TextRuns>
+                  <TextRun>
+                    <Value>="Report run at " + Globals!ExecutionTime</Value>
+                    <Style>
+                      <FontFamily>Segoe UI Light</FontFamily>
+                      <FontSize>18pt</FontSize>
+                    </Style>
+                  </TextRun>
+                </TextRuns>
+                <Style>
+                  <TextAlign>Right</TextAlign>
+                </Style>
+              </Paragraph>
+            </Paragraphs>
+            <rd:WatermarkTextbox>Title</rd:WatermarkTextbox>
+            <rd:DefaultName>ReportTitle</rd:DefaultName>
+            <Top>1.76736in</Top>
+            <Left>18.27083in</Left>
+            <Height>0.37847in</Height>
+            <Width>6.58333in</Width>
+            <ZIndex>3</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+              <PaddingLeft>2pt</PaddingLeft>
+              <PaddingRight>2pt</PaddingRight>
+              <PaddingTop>2pt</PaddingTop>
+              <PaddingBottom>2pt</PaddingBottom>
+            </Style>
+          </Textbox>
+          <Textbox Name="ReportTitle3">
+            <CanGrow>true</CanGrow>
+            <KeepTogether>true</KeepTogether>
+            <Paragraphs>
+              <Paragraph>
+                <TextRuns>
+                  <TextRun>
+                    <Value>="For " + IIf(Parameters!InForceOnly.Value = 1, "In-Force Policies Only", "In-Force and Expired Policies")</Value>
+                    <Style>
+                      <FontFamily>Segoe UI Light</FontFamily>
+                      <FontSize>18pt</FontSize>
+                    </Style>
+                  </TextRun>
+                </TextRuns>
+                <Style />
+              </Paragraph>
+            </Paragraphs>
+            <rd:WatermarkTextbox>Title</rd:WatermarkTextbox>
+            <rd:DefaultName>ReportTitle</rd:DefaultName>
+            <Top>1.375in</Top>
+            <Left>0.125in</Left>
+            <Height>0.37847in</Height>
+            <Width>6.41666in</Width>
+            <ZIndex>4</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+              <PaddingLeft>2pt</PaddingLeft>
+              <PaddingRight>2pt</PaddingRight>
+              <PaddingTop>2pt</PaddingTop>
+              <PaddingBottom>2pt</PaddingBottom>
+            </Style>
+          </Textbox>
+          <Textbox Name="ReportTitle4">
+            <CanGrow>true</CanGrow>
+            <KeepTogether>true</KeepTogether>
+            <Paragraphs>
+              <Paragraph>
+                <TextRuns>
+                  <TextRun>
+                    <Value>=Join(Parameters!CompanyGUID.Label, " and ")</Value>
+                    <Style>
+                      <FontFamily>Segoe UI Light</FontFamily>
+                      <FontSize>18pt</FontSize>
+                    </Style>
+                  </TextRun>
+                </TextRuns>
+                <Style />
+              </Paragraph>
+            </Paragraphs>
+            <rd:WatermarkTextbox>Title</rd:WatermarkTextbox>
+            <rd:DefaultName>ReportTitle</rd:DefaultName>
+            <Top>1.76736in</Top>
+            <Left>0.125in</Left>
+            <Height>0.37847in</Height>
+            <Width>12.875in</Width>
+            <ZIndex>5</ZIndex>
+            <Style>
+              <Border>
+                <Style>None</Style>
+              </Border>
+              <PaddingLeft>2pt</PaddingLeft>
+              <PaddingRight>2pt</PaddingRight>
+              <PaddingTop>2pt</PaddingTop>
+              <PaddingBottom>2pt</PaddingBottom>
+            </Style>
+          </Textbox>
+        </ReportItems>
+        <Height>3.36459in</Height>
+        <Style>
+          <Border>
+            <Style>None</Style>
+          </Border>
+        </Style>
+      </Body>
+      <Width>27.85417in</Width>
+      <Page>
+        <PageFooter>
+          <Height>0.12708in</Height>
+          <PrintOnFirstPage>true</PrintOnFirstPage>
+          <PrintOnLastPage>true</PrintOnLastPage>
+          <Style>
+            <Border>
+              <Style>None</Style>
+            </Border>
+          </Style>
+        </PageFooter>
+        <LeftMargin>1in</LeftMargin>
+        <RightMargin>1in</RightMargin>
+        <TopMargin>1in</TopMargin>
+        <BottomMargin>1in</BottomMargin>
+        <Style />
+      </Page>
+    </ReportSection>
+  </ReportSections>
+  <ReportParameters>
+    <ReportParameter Name="PolEffBeginDate">
+      <DataType>DateTime</DataType>
+      <Prompt>Pol Eff Begin Date</Prompt>
+    </ReportParameter>
+    <ReportParameter Name="PolEffEndDate">
+      <DataType>DateTime</DataType>
+      <Prompt>Pol Eff End Date</Prompt>
+    </ReportParameter>
+    <ReportParameter Name="ReportAsOfDate">
+      <DataType>DateTime</DataType>
+      <Prompt>Report As Of Date</Prompt>
+    </ReportParameter>
+    <ReportParameter Name="CompanyGUID">
+      <DataType>String</DataType>
+      <Prompt>Carrier(s)</Prompt>
+      <ValidValues>
+        <DataSetReference>
+          <DataSetName>DataSet2</DataSetName>
+          <ValueField>CompanyGUID</ValueField>
+          <LabelField>CompanyName</LabelField>
+        </DataSetReference>
+      </ValidValues>
+      <MultiValue>true</MultiValue>
+    </ReportParameter>
+    <ReportParameter Name="InForceOnly">
+      <DataType>Integer</DataType>
+      <Prompt>In Force Only</Prompt>
+      <ValidValues>
+        <ParameterValues>
+          <ParameterValue>
+            <Value>0</Value>
+            <Label>No</Label>
+          </ParameterValue>
+          <ParameterValue>
+            <Value>1</Value>
+            <Label>Yes</Label>
+          </ParameterValue>
+        </ParameterValues>
+      </ValidValues>
+    </ReportParameter>
+  </ReportParameters>
+  <ReportParametersLayout>
+    <GridLayoutDefinition>
+      <NumberOfColumns>4</NumberOfColumns>
+      <NumberOfRows>5</NumberOfRows>
+      <CellDefinitions>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>2</RowIndex>
+          <ParameterName>ReportAsOfDate</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>0</RowIndex>
+          <ParameterName>PolEffBeginDate</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>1</RowIndex>
+          <ParameterName>PolEffEndDate</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>4</RowIndex>
+          <ParameterName>InForceOnly</ParameterName>
+        </CellDefinition>
+        <CellDefinition>
+          <ColumnIndex>0</ColumnIndex>
+          <RowIndex>3</RowIndex>
+          <ParameterName>CompanyGUID</ParameterName>
+        </CellDefinition>
+      </CellDefinitions>
+    </GridLayoutDefinition>
+  </ReportParametersLayout>
+  <EmbeddedImages>
+    <EmbeddedImage Name="GramercyLogo">
+      <MIMEType>image/jpeg</MIMEType>
+      <ImageData>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</ImageData>
+    </EmbeddedImage>
+  </EmbeddedImages>
+  <rd:ReportUnitType>Inch</rd:ReportUnitType>
+  <rd:ReportServerUrl>http://gramercymga/ReportServer</rd:ReportServerUrl>
+  <rd:ReportID>057cb11f-39d6-494b-be73-51c8ac1b947f</rd:ReportID>
+</Report>
