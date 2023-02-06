@@ -1420,7 +1420,7 @@ order by 1</CommandText>
       <Width>14.27083in</Width>
       <Page>
         <PageFooter>
-          <Height>0.78333in</Height>
+          <Height>0.50208in</Height>
           <PrintOnFirstPage>true</PrintOnFirstPage>
           <PrintOnLastPage>true</PrintOnLastPage>
           <ReportItems>
@@ -1442,7 +1442,7 @@ order by 1</CommandText>
               </Paragraphs>
               <rd:DefaultName>ExecutionTime</rd:DefaultName>
               <Top>0.2in</Top>
-              <Left>4in</Left>
+              <Left>12in</Left>
               <Height>0.25in</Height>
               <Width>2in</Width>
               <Style>
